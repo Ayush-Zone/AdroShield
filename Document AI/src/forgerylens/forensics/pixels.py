@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Tuple
 from PIL import Image
 
 from forgerylens.contracts.evidence import EvidenceRecord, EvidenceStatus, Provenance
+from forgerylens.contracts.spatial import normalize_bbox
 
 # --- Named Constants ---
 
@@ -21,8 +22,8 @@ ELA_SEGMENTATION_THRESHOLD = 40  # Region grouping, not a forgery decision
 MAX_REGIONS_EMITTED = 10
 
 ELA_LIMITATIONS_TEXT = (
-    "ELA is unreliable on documents with sharp text edges, on re-saved or "
-    "screenshot images, and cannot detect many manipulations."
+    "ELA reacts to normal compression, re-saving, and sharp text edges; "
+    "it can produce regions on unedited images and miss real edits; it is a weak indicator only."
 )
 
 def _create_evidence(check_name: str, status: EvidenceStatus, observation: Dict[str, Any], raw_ref: str, parameters: Dict[str, Any] = None) -> EvidenceRecord:
@@ -58,7 +59,7 @@ def _estimate_jpeg_quality(img: Image.Image) -> Any:
         return "unknown"
 
 def assess_analyzability(file_path: str, is_pdf_rasterized: bool = False) -> Tuple[str, List[str], EvidenceRecord]:
-    raw_ref = str(uuid.uuid4())
+    raw_ref = None
     reasons = []
     status = "analyzable"
     evidence_status = EvidenceStatus.OK
@@ -67,13 +68,19 @@ def assess_analyzability(file_path: str, is_pdf_rasterized: bool = False) -> Tup
         with Image.open(file_path) as img:
             fmt = img.format
             w, h = img.size
-            quality = _estimate_jpeg_quality(img)
             
             # Reject non-JPEG or PDF rasterized immediately
-            if is_pdf_rasterized or fmt != "JPEG":
-                return "not_analyzable", ["no JPEG compression history"], _create_evidence(
-                    "image_analyzability", EvidenceStatus.NOT_ANALYZABLE,
-                    {"analyzability": "not_analyzable", "reasons": ["no JPEG compression history"]},
+            if is_pdf_rasterized:
+                return "not_analyzable", ["no JPEG compression history (PDF input)"], _create_evidence(
+                    "ela_applicability", EvidenceStatus.NOT_ANALYZABLE,
+                    {"analyzability": "not_analyzable", "reasons": ["no JPEG compression history (PDF input)"]},
+                    raw_ref
+                )
+            if fmt != "JPEG":
+                reason_str = f"no JPEG compression history ({fmt} input)"
+                return "not_analyzable", [reason_str], _create_evidence(
+                    "ela_applicability", EvidenceStatus.NOT_ANALYZABLE,
+                    {"analyzability": "not_analyzable", "reasons": [reason_str]},
                     raw_ref
                 )
                 
@@ -82,13 +89,6 @@ def assess_analyzability(file_path: str, is_pdf_rasterized: bool = False) -> Tup
                 status = "not_analyzable"
                 evidence_status = EvidenceStatus.NOT_ANALYZABLE
                 reasons.append(f"resolution ({w}x{h}) is below minimum {MIN_RESOLUTION[0]}x{MIN_RESOLUTION[1]}")
-                
-            # Quality check
-            if isinstance(quality, int) and quality < MIN_JPEG_QUALITY:
-                if status != "not_analyzable":
-                    status = "degraded"
-                    evidence_status = EvidenceStatus.NOT_ANALYZABLE
-                reasons.append(f"JPEG quality {quality} is below minimum {MIN_JPEG_QUALITY}")
                 
             # Variance check (flat image)
             gray = img.convert("L")
@@ -101,21 +101,23 @@ def assess_analyzability(file_path: str, is_pdf_rasterized: bool = False) -> Tup
                 
     except Exception as e:
         return "not_analyzable", [str(e)], _create_evidence(
-            "image_analyzability", EvidenceStatus.NOT_ANALYZABLE,
+            "ela_applicability", EvidenceStatus.NOT_ANALYZABLE,
             {"analyzability": "not_analyzable", "reasons": [str(e)]},
             raw_ref
         )
         
     obs = {
         "analyzability": status,
-        "reasons": reasons if reasons else ["acceptable"]
+        "reasons": reasons if reasons else ["acceptable"],
+        "jpeg_quality": "unknown",
+        "jpeg_quality_reason": "quality not exposed by Pillow"
     }
     
-    return status, reasons, _create_evidence("image_analyzability", evidence_status, obs, raw_ref)
+    return status, reasons, _create_evidence("ela_applicability", evidence_status, obs, raw_ref)
 
 
 def run_ela(file_path: str) -> Tuple[bytes, List[EvidenceRecord]]:
-    raw_ref = str(uuid.uuid4())
+    raw_ref = None
     records = []
     
     # 1. Load Original
@@ -173,10 +175,25 @@ def run_ela(file_path: str) -> Tuple[bytes, List[EvidenceRecord]]:
         box_diff = diff[y:y+h, x:x+w]
         magnitude = float(np.sum(box_diff))
         
+        img_w, img_h = orig_img.size
+        
+        try:
+            nx, ny, nw, nh = normalize_bbox(float(x), float(y), float(w), float(h), float(img_w), float(img_h))
+        except ValueError as e:
+            records.append(_create_evidence(
+                "ela_region", EvidenceStatus.NOT_ANALYZABLE, 
+                {"reason": f"Box normalization failed: {e}", "bbox_px": {"x": x, "y": y, "width": w, "height": h}, "image_size_px": {"w": img_w, "h": img_h}},
+                raw_ref, parameters=params
+            ))
+            emitted += 1
+            continue
+        
         obs = {
-            "bounding_box": {"x": x, "y": y, "width": w, "height": h},
+            "bounding_box": {"x": nx, "y": ny, "width": nw, "height": nh},
+            "bbox_px": {"x": x, "y": y, "width": w, "height": h},
+            "image_size_px": {"w": img_w, "h": img_h},
             "raw_difference_magnitude": magnitude,
-            "confidence": "uncalibrated",
+            "confidence": None,
             "limitations": ELA_LIMITATIONS_TEXT
         }
         

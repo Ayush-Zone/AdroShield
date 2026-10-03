@@ -68,8 +68,9 @@ def test_pipeline_happy_path(
     assert "consistency_check_subtotal_tax_vs_total" in types
     assert "forensic_metadata" in types
     
-    # Pixel mock is called because it's a PDF
-    mock_pixels.assert_called()
+    # Pixel mock is NOT called because it's a PDF
+    mock_pixels.assert_not_called()
+    assert "forensic_ela_applicability" in types
 
 @patch("forgerylens.pipeline.ingest_document")
 @patch("forgerylens.pipeline.extract_document_text")
@@ -108,4 +109,4 @@ def test_pipeline_dependency_failure(
     # Metadata and pixels still ran
     assert types.get("forensic_metadata") == EvidenceStatus.OK
     assert mock_meta_pdf.called
-    assert mock_pixels.called
+    assert not mock_pixels.called

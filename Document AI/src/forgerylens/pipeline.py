@@ -1,5 +1,6 @@
 import os
 import uuid
+import json
 import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from forgerylens.contracts.document import DocumentFormat
 from forgerylens.contracts.enums import IngestionStatus
 from forgerylens.contracts.structured import DocumentType
 from forgerylens.contracts.evidence import EvidenceRecord, EvidenceStatus, Provenance, EvidenceBundle
-
+from forgerylens.contracts.storage import make_artifact_ref
 from forgerylens.ingestion.reader import ingest_document
 from forgerylens.ocr.orchestrator import extract_document_text
 from forgerylens.classification.classifier import classify_document
@@ -184,8 +185,15 @@ def run_pipeline(file_path: str, *, reference_date: Optional[datetime.date] = No
         else:
             raw_meta, meta_records = analyze_image(file_path)
             
+        meta_path = doc_storage_dir / "metadata_raw.json"
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(raw_meta, f, indent=2)
+        meta_ref = make_artifact_ref(source_sha256, "metadata_raw.json")
+            
         for r in meta_records:
             r.provenance.source_file_sha256 = source_sha256
+            if hasattr(r, "raw_ref") and r.raw_ref is None:
+                r.raw_ref = meta_ref
             evidence_list.append(r)
     except Exception as e:
         evidence_list.append(EvidenceRecord(
@@ -200,36 +208,28 @@ def run_pipeline(file_path: str, *, reference_date: Optional[datetime.date] = No
     # 6. Pixel Forensics
     try:
         if not ingest_failed and ingested_doc and ingested_doc.format == DocumentFormat.PDF:
-            pdf_doc = fitz.open(file_path)
-            for page_idx in range(len(pdf_doc)):
-                page = pdf_doc[page_idx]
-                pix = page.get_pixmap(dpi=150)
-                raster_path = doc_storage_dir / f"page_{page_idx}.png"
-                pix.save(str(raster_path))
-                
-                raw_map, pixel_records = analyze_pixels(str(raster_path), is_pdf_rasterized=True)
-                if raw_map:
-                    map_path = doc_storage_dir / f"ela_map_page_{page_idx}.png"
-                    with open(map_path, "wb") as f:
-                        f.write(raw_map)
-                    for r in pixel_records:
-                        r.raw_ref = str(map_path)
-                        r.provenance.source_file_sha256 = source_sha256
-                        evidence_list.append(r)
-                else:
-                    for r in pixel_records:
-                        r.provenance.source_file_sha256 = source_sha256
-                        evidence_list.append(r)
-            pdf_doc.close()
+            # FL-03: No rasterization, no ELA for PDFs. Just emit one record.
+            pdf_ela_record = EvidenceRecord(
+                id=str(uuid.uuid4()),
+                type="forensic_ela_applicability",
+                status=EvidenceStatus.NOT_ANALYZABLE,
+                observation={"analyzability": "not_analyzable", "reasons": ["no JPEG compression history (PDF input)"], "jpeg_quality": "unknown", "jpeg_quality_reason": "quality not exposed by Pillow"},
+                method="rule_based",
+                provenance=doc_prov,
+                raw_ref=None
+            )
+            evidence_list.append(pdf_ela_record)
         else:
             raw_map, pixel_records = analyze_pixels(file_path, is_pdf_rasterized=False)
             if raw_map:
                 map_path = doc_storage_dir / "ela_map.png"
                 with open(map_path, "wb") as f:
                     f.write(raw_map)
+                ela_ref = make_artifact_ref(source_sha256, "ela_map.png")
                 for r in pixel_records:
-                    r.raw_ref = str(map_path)
                     r.provenance.source_file_sha256 = source_sha256
+                    if hasattr(r, "raw_ref") and r.raw_ref is None:
+                        r.raw_ref = ela_ref
                     evidence_list.append(r)
             else:
                 for r in pixel_records:

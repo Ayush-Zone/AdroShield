@@ -44,8 +44,8 @@ def _parse_pdf_date(pdf_date: str) -> datetime:
     return None
 
 def analyze_pdf(file_path: str) -> Tuple[Dict[str, Any], List[EvidenceRecord]]:
-    raw_ref = str(uuid.uuid4())
-    raw_meta = {"raw_ref": raw_ref}
+    raw_ref = None
+    raw_meta = {}
     records = []
     
     if not fitz:
@@ -85,30 +85,38 @@ def analyze_pdf(file_path: str) -> Tuple[Dict[str, Any], List[EvidenceRecord]]:
         
         date_obs = {
             "creation_date": creation if creation else "absent",
-            "modification_date": mod if mod else "absent"
+            "modification_date": mod if mod else "absent",
+            "parsed_creation_date": None,
+            "parsed_modification_date": None,
+            "delta_seconds": None,
+            "parse_status": "absent",
+            "limitations": "later modification is common (editing, re-saving, export, signing)."
         }
         
-        if creation and mod:
-            c_dt = _parse_pdf_date(creation)
-            m_dt = _parse_pdf_date(mod)
+        if creation or mod:
+            c_dt = _parse_pdf_date(creation) if creation else None
+            m_dt = _parse_pdf_date(mod) if mod else None
+            
+            if c_dt:
+                date_obs["parsed_creation_date"] = c_dt.isoformat()
+            if m_dt:
+                date_obs["parsed_modification_date"] = m_dt.isoformat()
+                
             if c_dt and m_dt:
-                diff_seconds = (m_dt - c_dt).total_seconds()
-                date_obs["modification_difference_seconds"] = diff_seconds
-                if diff_seconds > 0:
-                    date_obs["finding"] = f"modification date is {diff_seconds} seconds after creation date"
-                elif diff_seconds < 0:
-                    date_obs["finding"] = f"modification date is {abs(diff_seconds)} seconds before creation date"
-                else:
-                    date_obs["finding"] = "modification date matches creation date"
+                date_obs["delta_seconds"] = (m_dt - c_dt).total_seconds()
+                date_obs["parse_status"] = "ok"
+            elif (creation and not c_dt) or (mod and not m_dt):
+                date_obs["parse_status"] = "unparsable"
             else:
-                date_obs["finding"] = "dates present but unparseable"
+                date_obs["parse_status"] = "partial"
                 
         records.append(_create_evidence("pdf_dates", EvidenceStatus.OK, date_obs, raw_ref))
         
-        # 3. Revisions
-        records.append(_create_evidence("pdf_revisions", EvidenceStatus.OK, {
+        # 3. Structure
+        records.append(_create_evidence("pdf_structure", EvidenceStatus.OK, {
             "eof_marker_count": eof_count,
-            "finding": f"found {eof_count} %%EOF markers indicating revision/incremental-update count"
+            "linearized": "unknown",
+            "limitations": "the EOF marker count is a structural indicator; linearized PDFs and some generators emit more than one marker; it is not a revision count."
         }, raw_ref))
         
         # 4. Embedded contents
@@ -123,8 +131,8 @@ def analyze_pdf(file_path: str) -> Tuple[Dict[str, Any], List[EvidenceRecord]]:
     return raw_meta, records
 
 def analyze_image(file_path: str) -> Tuple[Dict[str, Any], List[EvidenceRecord]]:
-    raw_ref = str(uuid.uuid4())
-    raw_meta = {"raw_ref": raw_ref}
+    raw_ref = None
+    raw_meta = {}
     records = []
     
     if not Image:
@@ -155,9 +163,7 @@ def analyze_image(file_path: str) -> Tuple[Dict[str, Any], List[EvidenceRecord]]
                 raw_meta["exif"] = None
                 records.append(_create_evidence("image_exif_presence", EvidenceStatus.OK, {
                     "exif_present": False,
-                    "software": "absent",
-                    "datetime": "absent",
-                    "datetime_original": "absent"
+                    "limitations": "absence is common (messaging apps, screenshots, exports)."
                 }, raw_ref))
                 
     except Exception as e:

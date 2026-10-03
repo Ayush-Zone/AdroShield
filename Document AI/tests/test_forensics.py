@@ -5,6 +5,9 @@ from PIL import Image
 from forgerylens.forensics.metadata import analyze_pdf, analyze_image
 from forgerylens.contracts.evidence import EvidenceStatus
 
+def assert_neutral_observation(record):
+    assert "finding" not in record.observation
+
 @pytest.fixture
 def clean_pdf(tmp_path):
     path = tmp_path / "clean.pdf"
@@ -55,6 +58,8 @@ def exif_image(tmp_path):
 
 def test_pdf_no_metadata(clean_pdf):
     raw_meta, records = analyze_pdf(clean_pdf)
+    for r in records:
+        assert_neutral_observation(r)
     
     prod_creator = next(r for r in records if r.type == "forensic_pdf_producer_creator")
     assert prod_creator.observation["producer"] == "absent"
@@ -65,30 +70,33 @@ def test_pdf_no_metadata(clean_pdf):
     assert dates.observation["modification_date"] == "absent"
     
     # 1 %%EOF from the initial save
-    revs = next(r for r in records if r.type == "forensic_pdf_revisions")
+    revs = next(r for r in records if r.type == "forensic_pdf_structure")
     assert revs.observation["eof_marker_count"] == 1
 
 def test_pdf_edited_metadata(edited_pdf):
     raw_meta, records = analyze_pdf(edited_pdf)
+    for r in records:
+        assert_neutral_observation(r)
     
     dates = next(r for r in records if r.type == "forensic_pdf_dates")
-    assert "modification_difference_seconds" in dates.observation
-    assert dates.observation["modification_difference_seconds"] > 0
-    assert "after creation date" in dates.observation["finding"]
-    
+    assert "delta_seconds" in dates.observation
     # Initial save + incremental save = 2 %%EOF markers
-    revs = next(r for r in records if r.type == "forensic_pdf_revisions")
+    revs = next(r for r in records if r.type == "forensic_pdf_structure")
     assert revs.observation["eof_marker_count"] == 2
 
 def test_image_no_exif(no_exif_image):
     raw_meta, records = analyze_image(no_exif_image)
+    for r in records:
+        assert_neutral_observation(r)
     
     pres = next(r for r in records if r.type == "forensic_image_exif_presence")
     assert pres.observation["exif_present"] is False
-    assert pres.observation["software"] == "absent"
+    assert "limitations" in pres.observation
 
 def test_image_with_exif(exif_image):
     raw_meta, records = analyze_image(exif_image)
+    for r in records:
+        assert_neutral_observation(r)
     
     pres = next(r for r in records if r.type == "forensic_image_exif_presence")
     assert pres.observation["exif_present"] is True

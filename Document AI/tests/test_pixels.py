@@ -13,6 +13,7 @@ from forgerylens.forensics.pixels import (
     MIN_RESOLUTION
 )
 from forgerylens.contracts.evidence import EvidenceStatus
+from tests.test_forensics import assert_neutral_observation
 
 # --- Fixtures ---
 
@@ -72,50 +73,59 @@ def tiny_image(tmp_path):
 
 def test_png_not_analyzable(png_image):
     raw_map, records = analyze_pixels(png_image)
+    for r in records:
+        assert_neutral_observation(r)
     assert len(records) == 1
     ev = records[0]
     assert ev.status == EvidenceStatus.NOT_ANALYZABLE
     assert ev.observation["analyzability"] == "not_analyzable"
-    assert "no JPEG compression history" in ev.observation["reasons"]
+    assert "no JPEG compression history (PNG input)" in ev.observation["reasons"]
     assert raw_map == b""
 
 def test_pdf_rasterized_not_analyzable(unedited_jpeg):
     # Pass a valid JPEG but set is_pdf_rasterized=True
     raw_map, records = analyze_pixels(unedited_jpeg, is_pdf_rasterized=True)
+    for r in records:
+        assert_neutral_observation(r)
     assert len(records) == 1
     assert records[0].status == EvidenceStatus.NOT_ANALYZABLE
-    assert "no JPEG compression history" in records[0].observation["reasons"]
+    assert "no JPEG compression history (PDF input)" in records[0].observation["reasons"]
 
 def test_blank_image(blank_image):
     raw_map, records = analyze_pixels(blank_image)
+    for r in records:
+        assert_neutral_observation(r)
     assert len(records) == 1
     assert records[0].status == EvidenceStatus.NOT_ANALYZABLE
     assert any("variance" in r and "blank" in r for r in records[0].observation["reasons"])
 
 def test_tiny_image(tiny_image):
     raw_map, records = analyze_pixels(tiny_image)
+    for r in records:
+        assert_neutral_observation(r)
     assert len(records) == 1
     assert records[0].status == EvidenceStatus.NOT_ANALYZABLE
     assert any("resolution" in r for r in records[0].observation["reasons"])
 
 def test_unedited_jpeg_clean(unedited_jpeg):
     raw_map, records = analyze_pixels(unedited_jpeg)
+    for r in records:
+        assert_neutral_observation(r)
     analyzability = records[0]
     assert analyzability.status == EvidenceStatus.OK
     assert analyzability.observation["analyzability"] == "analyzable"
     
     ela_records = records[1:]
-    # Honestly report: clean fixtures CAN produce ELA regions due to JPEG 8x8 block boundaries
-    # or gradient step artifacts. 
-    # The test passes as long as the status is analyzable and records have the right format.
     for r in ela_records:
         assert r.type == "forensic_ela_region"
-        assert r.observation["confidence"] == "uncalibrated"
-        assert "unreliable on documents with sharp text edges" in r.observation["limitations"]
+        assert r.observation["confidence"] is None
+        assert "weak indicator" in r.observation["limitations"]
 
 def test_edited_jpeg(edited_jpeg):
     # We placed a block from x=50..100, y=50..100
     raw_map, records = analyze_pixels(edited_jpeg)
+    for r in records:
+        assert_neutral_observation(r)
     analyzability = records[0]
     assert analyzability.status == EvidenceStatus.OK
     
@@ -128,7 +138,7 @@ def test_edited_jpeg(edited_jpeg):
     
     overlap_found = False
     for r in ela_records:
-        box = r.observation["bounding_box"]
+        box = r.observation["bbox_px"]
         # Check intersection
         bx1, by1 = box["x"], box["y"]
         bx2, by2 = bx1 + box["width"], by1 + box["height"]
@@ -150,6 +160,8 @@ def test_region_cap(unedited_jpeg):
     noisy_img.save(unedited_jpeg, format="JPEG", quality=90)
     
     raw_map, records = analyze_pixels(unedited_jpeg)
+    for r in records:
+        assert_neutral_observation(r)
     ela_records = records[1:]
     assert len(ela_records) <= MAX_REGIONS_EMITTED
     
