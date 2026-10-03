@@ -1,0 +1,3 @@
+# Optional engines for ForgeryLens
+# PaddleOCR is supported but not required in the base environment.
+paddleocr

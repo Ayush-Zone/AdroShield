@@ -1,9 +1,9 @@
 # ForgeryLens (Document AI) — Architecture
 
-**Document Version:** 2.0.0  
-**Branch:** `anurag_forgery`  
-**Target Module:** `Document AI/`  
-**Status:** Active Implementation  
+**Document Version:** 2.0.0
+**Branch:** `anurag_forgery`
+**Target Module:** `Document AI/`
+**Status:** Active Implementation
 
 ---
 
@@ -45,7 +45,7 @@ ADROSHIELD operates via modular analyzers (ForgeryLens, PixelWitness, IdentityMa
 
 ## 6. Output Schema and Result Mapping
 
-EvidenceRecord and EvidenceBundle are the **canonical ForgeryLens output**. 
+EvidenceRecord and EvidenceBundle are the **canonical ForgeryLens output**.
 
 | Result Concept | Status | File Location |
 |---|---|---|

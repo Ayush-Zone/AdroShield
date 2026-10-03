@@ -8,7 +8,7 @@ def generate_demo_ui_payload(bundle: EvidenceBundle) -> Dict[str, Any]:
     """
     evidence_list = []
     findings = []
-    
+
     for record in bundle.evidence:
         # Pass through exactly as is
         record_dict = {
@@ -22,9 +22,9 @@ def generate_demo_ui_payload(bundle: EvidenceBundle) -> Dict[str, Any]:
             "limitations": getattr(record, "limitations", None),
             "raw_ref": record.raw_ref
         }
-        
+
         evidence_list.append(record_dict)
-        
+
         # Deterministic rules for findings
         obs = record.observation
         if isinstance(obs, dict):
@@ -36,7 +36,7 @@ def generate_demo_ui_payload(bundle: EvidenceBundle) -> Dict[str, Any]:
                     "summary": f"ELA region detected with magnitude {mag}",
                     "evidence_ids": [record.id]
                 })
-            
+
             # 2. Consistency checks mismatches
             # In Phase 2, consistency check invalid results output 'result'='mismatch' or 'invalid'
             if record.type.startswith("consistency_check"):
@@ -47,7 +47,7 @@ def generate_demo_ui_payload(bundle: EvidenceBundle) -> Dict[str, Any]:
                         "summary": f"Consistency mismatch detected in {record.type}",
                         "evidence_ids": [record.id]
                     })
-                
+
     # document_provenance serialization logic
     prov_dict = {}
     if hasattr(bundle.document_provenance, "to_dict"):
@@ -56,7 +56,7 @@ def generate_demo_ui_payload(bundle: EvidenceBundle) -> Dict[str, Any]:
         prov_dict = bundle.document_provenance.__dict__.copy()
         if "timestamp" in prov_dict and hasattr(prov_dict["timestamp"], "isoformat"):
             prov_dict["timestamp"] = prov_dict["timestamp"].isoformat()
-            
+
     return {
         "document_provenance": prov_dict,
         "evidence": evidence_list,

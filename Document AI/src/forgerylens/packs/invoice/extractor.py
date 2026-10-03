@@ -3,7 +3,7 @@ from typing import List
 
 from forgerylens.contracts.ocr import OCRResult, OCRWord, OCRPage
 from forgerylens.contracts.structured import Region
-from .models import ExtractedField, FieldStatus, ExtractedInvoicePack
+from .models import ExtractedField, FieldStatus, ExtractedInvoicePack, ExtractedLineItem
 
 class TextLine:
     """Helper class representing a horizontal line of text."""
@@ -132,5 +132,23 @@ def extract_invoice_pack(ocr_result: OCRResult) -> ExtractedInvoicePack:
         discounts=_extract_field(all_lines, PATTERNS["discounts"], "discounts"),
         additional_charges=_extract_field(all_lines, PATTERNS["additional_charges"], "additional_charges"),
         grand_total=_extract_field(all_lines, PATTERNS["grand_total"], "grand_total"),
-        line_items=[] # Simplified for this phase unless required.
+        line_items=_extract_line_items(all_lines)
     )
+
+def _extract_line_items(lines: List[TextLine]) -> List[ExtractedLineItem]:
+    line_items = []
+    # Simple regex: Description (greedy string), Qty (digits), Price (currency), Amount (currency)
+    # Looks for lines with at least a description and an amount at the end
+    # Using a simplified heuristic for demo purposes.
+    pattern = r"(.+?)\s+(\d+)\s+([\$€£₹\u20b9]?\s*[0-9\,\.]+)\s+([\$€£₹\u20b9]?\s*[0-9\,\.]+)$"
+    for line in lines:
+        match = re.search(pattern, line.text)
+        if match:
+            desc, qty, price, amt = match.groups()
+            line_items.append(ExtractedLineItem(
+                description=ExtractedField(status=FieldStatus.OK, raw_value=desc.strip(), parsed_value=desc.strip(), region=line.region),
+                quantity=ExtractedField(status=FieldStatus.OK, raw_value=qty.strip(), parsed_value=qty.strip(), region=line.region),
+                unit_price=ExtractedField(status=FieldStatus.OK, raw_value=price.strip(), parsed_value=price.strip(), region=line.region),
+                amount=ExtractedField(status=FieldStatus.OK, raw_value=amt.strip(), parsed_value=amt.strip(), region=line.region)
+            ))
+    return line_items

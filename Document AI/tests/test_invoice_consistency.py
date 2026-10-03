@@ -12,7 +12,7 @@ def _make_field(val: str, status=NormalizationStatus.SUCCESS):
         status=status,
         normalized_value=CurrencyAmount(amount=Decimal(val), currency="USD") if status == NormalizationStatus.SUCCESS and val else None
     )
-    
+
 def _make_date_field(val: str, status=NormalizationStatus.SUCCESS):
     return NormalizedField(
         raw_value=val,
@@ -37,7 +37,7 @@ def _make_pack(sub="100.00", tax="10.00", total="110.00", inv_date="2026-10-01")
 def test_exact_match():
     pack = _make_pack(sub="100.00", tax="10.00", total="110.00")
     checks = run_all_consistency_checks(pack, date(2026, 10, 2))
-    
+
     # Subtotal check
     ev = checks[0]
     assert ev.status == EvidenceStatus.OK
@@ -84,14 +84,14 @@ def test_missing_field():
     assert "Missing or ambiguous" in ev.observation["reason"]
 
 def test_ambiguous_number():
-    # 1.234,50 and 1,234.50 are both valid numbers if only one is present, 
+    # 1.234,50 and 1,234.50 are both valid numbers if only one is present,
     pack = _make_pack(tax="10.00", total="110.00")
     pack.subtotal = _make_field("1.234", NormalizationStatus.AMBIGUOUS)
     checks = run_all_consistency_checks(pack, date(2026, 10, 2))
     ev = checks[0]
     assert ev.status == EvidenceStatus.NOT_ANALYZABLE
     assert "Ambiguous numerical formats" in ev.observation["reason"]
-    
+
 def test_ambiguous_date():
     pack = _make_pack()
     pack.invoice_date = _make_date_field("03/04/2026", NormalizationStatus.AMBIGUOUS)

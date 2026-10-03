@@ -30,18 +30,18 @@ def test_make_artifact_ref_valid():
 def test_resolve_artifact_ref():
     storage_root = Path("/tmp/storage")
     sha = "a" * 64
-    
+
     # Valid
     assert resolve_artifact_ref(f"artifact:{sha}/ela_map.png", storage_root) == (storage_root / sha / "ela_map.png").resolve()
 
     # Bad sha length
     with pytest.raises(ValueError):
         resolve_artifact_ref("artifact:abc/ela_map.png", storage_root)
-        
+
     # Traversal ..
     with pytest.raises(ValueError):
         resolve_artifact_ref(f"artifact:{sha}/../ela_map.png", storage_root)
-        
+
     # Traversal nested directory a/b
     with pytest.raises(ValueError):
         resolve_artifact_ref(f"artifact:{sha}/nested/ela_map.png", storage_root)
@@ -49,11 +49,11 @@ def test_resolve_artifact_ref():
     # Traversal backslash
     with pytest.raises(ValueError):
         resolve_artifact_ref(f"artifact:{sha}/nested\\ela_map.png", storage_root)
-        
+
     # Absolute path
     with pytest.raises(ValueError):
         resolve_artifact_ref(f"artifact:{sha}//etc/passwd", storage_root)
-        
+
     # Empty name
     with pytest.raises(ValueError):
         resolve_artifact_ref(f"artifact:{sha}/", storage_root)
@@ -61,7 +61,7 @@ def test_resolve_artifact_ref():
 def test_evidence_location_enforces_bounds():
     # Valid
     EvidenceLocation(page_number=1, x=0.0, y=0.5, width=1.0, height=0.2)
-    
+
     # Invalid
     with pytest.raises(ValueError):
         EvidenceLocation(page_number=1, x=-0.1, y=0.5, width=1.0, height=0.2)
@@ -69,4 +69,3 @@ def test_evidence_location_enforces_bounds():
         EvidenceLocation(page_number=1, x=0.0, y=1.5, width=1.0, height=0.2)
     with pytest.raises(ValueError):
         EvidenceLocation(page_number=1, x=0.0, y=0.5, width=1.1, height=0.2)
-

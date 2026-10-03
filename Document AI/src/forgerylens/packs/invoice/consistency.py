@@ -40,29 +40,29 @@ def check_subtotal_tax_vs_total(invoice: NormalizedInvoice) -> EvidenceRecord:
                 "grand_total": tot.raw_value if tot else None
             }
         })
-        
+
     sub_val = sub.normalized_value.amount
     tax_val = tax.normalized_value.amount
     tot_val = tot.normalized_value.amount
-    
+
     calc_total = sub_val + tax_val
-    
+
     if invoice.additional_charges and invoice.additional_charges.status == NormalizationStatus.SUCCESS:
         calc_total += invoice.additional_charges.normalized_value.amount
-            
+
     if invoice.discounts and invoice.discounts.status == NormalizationStatus.SUCCESS:
         calc_total -= invoice.discounts.normalized_value.amount
-    
+
     diff = abs(calc_total - tot_val)
     tolerance = Decimal("0.02")
-    
+
     if diff == Decimal("0"):
         result = "exact"
     elif diff <= tolerance:
         result = "within_rounding"
     else:
         result = "mismatch"
-        
+
     return _create_evidence("subtotal_tax_vs_total", EvidenceStatus.OK, {
         "result": result,
         "values_compared": {
@@ -79,13 +79,13 @@ def check_line_items_vs_subtotal(invoice: NormalizedInvoice) -> EvidenceRecord:
         return _create_evidence("line_items_vs_subtotal", EvidenceStatus.NOT_ANALYZABLE, {
             "reason": "input not extracted"
         })
-        
+
     sub = invoice.subtotal
     if not sub or sub.status != NormalizationStatus.SUCCESS:
         return _create_evidence("line_items_vs_subtotal", EvidenceStatus.NOT_ANALYZABLE, {
             "reason": "Missing or ambiguous subtotal"
         })
-        
+
     calc_subtotal = Decimal("0")
     for item in invoice.line_items:
         if not item.amount or item.amount.status != NormalizationStatus.SUCCESS:
@@ -94,18 +94,18 @@ def check_line_items_vs_subtotal(invoice: NormalizedInvoice) -> EvidenceRecord:
                 "raw_value": item.amount.raw_value if item.amount else None
             })
         calc_subtotal += item.amount.normalized_value.amount
-        
+
     sub_val = sub.normalized_value.amount
     diff = abs(calc_subtotal - sub_val)
     tolerance = Decimal("0.02")
-    
+
     if diff == Decimal("0"):
         result = "exact"
     elif diff <= tolerance:
         result = "within_rounding"
     else:
         result = "mismatch"
-        
+
     return _create_evidence("line_items_vs_subtotal", EvidenceStatus.OK, {
         "result": result,
         "values_compared": {
@@ -126,7 +126,7 @@ def check_invoice_date(invoice: NormalizedInvoice, reference_date: date | None) 
         return _create_evidence("invoice_date", EvidenceStatus.NOT_ANALYZABLE, {
             "reason": "no reference date supplied"
         })
-        
+
     inv_date_field = invoice.invoice_date
     if not inv_date_field or inv_date_field.status != NormalizationStatus.SUCCESS:
         reason = "Ambiguous date formats" if inv_date_field and inv_date_field.status == NormalizationStatus.AMBIGUOUS else "Missing or ambiguous input fields"
@@ -134,16 +134,16 @@ def check_invoice_date(invoice: NormalizedInvoice, reference_date: date | None) 
             "reason": reason,
             "values_compared": {"invoice_date": inv_date_field.raw_value if inv_date_field else None}
         })
-        
+
     inv_date = date.fromisoformat(inv_date_field.normalized_value)
-    
+
     diff_days = (inv_date - reference_date).days
-    
+
     if diff_days > 0:
         result = "mismatch"
     else:
         result = "exact"
-        
+
     return _create_evidence("invoice_date", EvidenceStatus.OK, {
         "result": result,
         "values_compared": {

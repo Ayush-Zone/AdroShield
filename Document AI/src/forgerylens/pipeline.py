@@ -5,8 +5,6 @@ import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional
-import fitz
-
 from forgerylens.contracts.document import DocumentFormat
 from forgerylens.contracts.enums import IngestionStatus
 from forgerylens.contracts.structured import DocumentType
@@ -27,14 +25,14 @@ PIPELINE_VERSION = "1.0.0"
 def run_pipeline(file_path: str, *, reference_date: Optional[datetime.date] = None) -> EvidenceBundle:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Missing file: {file_path}")
-        
+
     with open(file_path, "rb") as f:
         file_bytes = f.read()
     source_sha256 = hashlib.sha256(file_bytes).hexdigest()
-    
+
     doc_storage_dir = STORAGE_ROOT / source_sha256
     doc_storage_dir.mkdir(parents=True, exist_ok=True)
-    
+
     timestamp = datetime.now(timezone.utc)
     doc_prov = Provenance(
         source_file_sha256=source_sha256,
@@ -43,7 +41,7 @@ def run_pipeline(file_path: str, *, reference_date: Optional[datetime.date] = No
         parameters={},
         timestamp=timestamp
     )
-    
+
     evidence_list: List[EvidenceRecord] = []
     # 1. Ingestion
     ingested_doc = ingest_document(file_path)
@@ -141,16 +139,16 @@ def run_pipeline(file_path: str, *, reference_date: Optional[datetime.date] = No
         doc_type_val = classification_record.observation.get("document_type")
         cues = classification_record.observation.get("cues")
         candidates = classification_record.observation.get("candidates")
-        
+
         is_invoice = (classification_record.status == EvidenceStatus.OK and doc_type_val == DocumentType.INVOICE.value)
-        
+
         if not is_invoice:
             reason = f"Document type is {doc_type_val}"
             if doc_type_val == DocumentType.AMBIGUOUS.value:
                 reason += f", candidates: {candidates}"
             if cues:
                 reason += f", cues: {cues}"
-            
+
             evidence_list.append(EvidenceRecord(
                 id=str(uuid.uuid4()),
                 type="pack_orchestration",
@@ -163,7 +161,7 @@ def run_pipeline(file_path: str, *, reference_date: Optional[datetime.date] = No
             try:
                 structured_invoice = parse_document(ocr_result)
                 normalized_invoice = normalize_document(structured_invoice)
-                
+
                 cons_records = run_all_consistency_checks(normalized_invoice, reference_date)
                 for r in cons_records:
                     r.provenance.source_file_sha256 = source_sha256
@@ -184,12 +182,12 @@ def run_pipeline(file_path: str, *, reference_date: Optional[datetime.date] = No
             raw_meta, meta_records = analyze_pdf(file_path)
         else:
             raw_meta, meta_records = analyze_image(file_path)
-            
+
         meta_path = doc_storage_dir / "metadata_raw.json"
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(raw_meta, f, indent=2)
         meta_ref = make_artifact_ref(source_sha256, "metadata_raw.json")
-            
+
         for r in meta_records:
             r.provenance.source_file_sha256 = source_sha256
             if hasattr(r, "raw_ref") and r.raw_ref is None:

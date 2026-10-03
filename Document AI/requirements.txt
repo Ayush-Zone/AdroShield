@@ -9,3 +9,7 @@ pytesseract>=0.3.10,<0.4.0
 
 # Testing
 pytest>=8.0.0,<9.0.0
+
+# Image Processing & Math
+numpy>=1.24.3
+opencv-python>=4.11.0.86
