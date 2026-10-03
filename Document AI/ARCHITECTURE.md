@@ -347,3 +347,34 @@ Phase 3 introduces an isolated extraction layer designed to identify words and b
 - **Observation Only**: The extraction layer answers *what* text is on the page, not *whether* it is correct, anomalous, or fraudulent.
 - **Preservation**: Low-confidence text is preserved exactly as recognized without speculative auto-correction.
 - **Memory Safety**: PDFs are rendered sequentially at a capped 150 DPI to prevent RAM exhaustion. Images avoid full decompression via prior Phase 2 limits.
+
+---
+
+## 11. Phase 4: Structured Document Extraction Implementation
+
+Phase 4 bridges the gap between raw OCR observations (`OCRResult`) and semantic domain entities (`StructuredInvoice`).
+
+### 11.1 Document Type Detection
+A lightweight, deterministic heuristic identifies whether the document is an invoice based on key indicator words (e.g., "invoice", "bill", "receipt"). If no indicators are present, it falls back to `DocumentType.UNKNOWN`.
+
+### 11.2 Text Line Grouping
+Since OCR engines (like Tesseract and PyMuPDF) return words with absolute coordinates, the parser groups words into logical horizontal text lines by sorting and comparing normalized Y-coordinates with a tolerance threshold. This preserves reading order regardless of the OCR backend.
+
+### 11.3 Field Extraction (Regex Precedence)
+Invoice fields are extracted using prioritized regex patterns. The parser checks the most specific patterns first (e.g., `(?i)\b(?:grand|net|final)\b...`) across all lines before falling back to more generic patterns (e.g., `(?i)\btotal\b...`). This prevents early matching of partial labels (like matching "Total" when "Subtotal" or "Grand Total" is present).
+
+Supported Extracted Fields:
+- Basic: `invoice_number`, `invoice_date`, `vendor_name`, `customer_name`
+- Vehicle/Claim: `vehicle_number`, `claim_number`, `policy_number`, `vin_chassis_number`
+- Financial: `subtotal`, `taxes`, `discounts`, `additional_charges`, `grand_total`
+
+### 11.4 Line Item Extraction
+Line items are extracted using a heuristic table-parsing strategy:
+1. Identify a table header containing description keywords (e.g., "Description", "Item") and numeric columns ("Qty", "Rate", "Amount").
+2. Parse subsequent lines, anchoring on the trailing numeric values (Quantity, Unit Price, Amount) and grouping preceding words as the Description.
+3. Terminate parsing when financial total keywords are encountered.
+
+### 11.5 Strict Boundary Preservation
+- **No Validation**: Phase 4 strictly *extracts* the text on the page. It does not validate `Quantity * Rate == Amount` or check if `Subtotal + Tax == Grand Total`.
+- **Raw Evidence**: Extracted fields are wrapped in `FieldEvidence`, preserving the exact raw string (e.g., `"INV-2O45"`) and the spatial bounding box `Region` where it was found. This enables downstream forensics and verifiable investigator findings.
+- **Missing Data**: If a field is not found, it remains `None`. No values are fabricated or assumed.
