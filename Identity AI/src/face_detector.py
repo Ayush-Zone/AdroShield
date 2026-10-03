@@ -294,3 +294,23 @@ def detect_faces(
     """
     active_detector = detector if detector is not None else get_default_detector()
     return active_detector.detect_faces(image_input)
+
+class RetinaFaceDetector(BaseFaceDetector):
+    """High-accuracy detector for noisy ID documents and high-resolution photos."""
+    def detect_raw(self, image) -> list[BoundingBox]:
+        try:
+            from deepface import DeepFace
+            img_array = np.array(image)
+            faces = DeepFace.extract_faces(
+                img_path=img_array, 
+                detector_backend="retinaface", 
+                enforce_detection=False
+            )
+            valid_faces = [f for f in faces if f.get("confidence", 1.0) > 0.80]
+            boxes = []
+            for face in valid_faces:
+                area = face["facial_area"]
+                boxes.append(BoundingBox(x=area["x"], y=area["y"], width=area["w"], height=area["h"]))
+            return boxes
+        except Exception:
+            return []

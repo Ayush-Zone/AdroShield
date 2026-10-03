@@ -40,7 +40,8 @@ class IdentityMatcher:
             return {"status": "error", "indicator": "VALIDATION_FAILED", "message": f"{image_role} validation failed: {val_result.message}"}
             
         # 2. Preprocessing
-        prep_result = preprocess_image(val_result)
+        target_path = getattr(val_result, "file_path", image_path)
+        prep_result = preprocess_image(target_path)
         if prep_result.status != "ok":
             return {"status": "error", "indicator": "PREPROCESSING_FAILED", "message": f"{image_role} preprocessing failed."}
             
@@ -80,12 +81,13 @@ class IdentityMatcher:
             message="Identity match computed successfully."
         )
 
-def verify_identity(id_image_path: str, selfie_image_path: str) -> dict:
+def verify_identity(id_image_path: str, selfie_image_path: str, detector_backend: str = "retinaface") -> dict:
     """Public API for end-to-end identity verification.
     
     Executes the full pipeline and maps cosine distance to Risk Engine status strings.
     """
     from .embedder import DeepFaceEmbedder
+    from .face_detector import RetinaFaceDetector, HaarCascadeFaceDetector
     
     try:
         embedder = DeepFaceEmbedder()
@@ -96,7 +98,12 @@ def verify_identity(id_image_path: str, selfie_image_path: str) -> dict:
             "message": str(e)
         }
         
-    matcher = IdentityMatcher(embedder=embedder)
+    if detector_backend == "retinaface":
+        detector = RetinaFaceDetector()
+    else:
+        detector = HaarCascadeFaceDetector()
+        
+    matcher = IdentityMatcher(embedder=embedder, detector=detector)
     match_res = matcher.match_identity(id_image_path, selfie_image_path)
     
     if match_res.status != "ok":
