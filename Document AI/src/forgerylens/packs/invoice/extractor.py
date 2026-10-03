@@ -103,12 +103,15 @@ PATTERNS = {
     "claim_number": [r"(?i)\bclaim\s*(?:no|number|#)[\s:]*([A-Z0-9\-]+)"],
     "policy_number": [r"(?i)\bpolicy\s*(?:no|number|#)[\s:]*([A-Z0-9\-]+)"],
     "vin_chassis_number": [r"(?i)\b(?:vin|chassis)\s*(?:no|number|#)?[\s:]*([A-Z0-9\-]+)"],
-    "subtotal": [r"(?i)\bsubtotal[\s:]*([\$\₹\€\£]?[0-9\,\.]+)"],
-    "taxes": [r"(?i)\btax(?:es)?[\s:]*([\$\₹\€\£]?[0-9\,\.]+)"],
-    "discounts": [r"(?i)\bdiscount(?:s)?[\s:]*([\$\₹\€\£]?[0-9\,\.]+)"],
-    "additional_charges": [r"(?i)\b(?:additional|other)\s*charges[\s:]*([\$\₹\€\£]?[0-9\,\.]+)"],
-    "grand_total": [r"(?i)\b(?:grand\s*total|total|amount\s*due)[\s:]*([\$\₹\€\£]?[0-9\,\.]+)"]
+    "subtotal": [r"(?i)\bsubtotal\b.*?([0-9\,\.]{3,})"],
+    "taxes": [r"(?i)\b(?:tax(?:es)?|gst|vat)\b.*?([0-9\,\.]{3,})"],
+    "discounts": [r"(?i)\bdiscount(?:s)?\b.*?([0-9\,\.]{3,})"],
+    "additional_charges": [r"(?i)\b(?:additional|other)\s*charges\b.*?([0-9\,\.]{3,})"],
+    "grand_total": [r"(?i)\b(?:grand\s*total|total|amount\s*due|amount)\b.*?([0-9\,\.]{3,})"]
 }
+
+# Fix invoice_date pattern manually since it was above the replacement block:
+PATTERNS["invoice_date"] = [r"(?i)(?<!due\s)\b(?:invoice\s*)?date[\s:]*([\d\-\/A-Za-z]+)"]
 
 def extract_invoice_pack(ocr_result: OCRResult) -> ExtractedInvoicePack:
     all_lines: List[TextLine] = []

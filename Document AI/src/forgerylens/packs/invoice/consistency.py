@@ -18,7 +18,8 @@ def _parse_decimal(raw: str) -> Tuple[List[Decimal], List[str]]:
     candidates = set()
     
     # Format 1: 1,234.50 (comma as thousands, dot as decimal)
-    if '.' in cleaned or ',' not in cleaned or (',' in cleaned and cleaned.rfind(',') < cleaned.rfind('.')):
+    # Also support commas only if there is no decimal point (e.g. 1,45,500)
+    if '.' in cleaned or ',' not in cleaned or (',' in cleaned and (cleaned.rfind(',') < cleaned.rfind('.') or '.' not in cleaned)):
         try:
             val1 = cleaned.replace(',', '')
             candidates.add(Decimal(val1))

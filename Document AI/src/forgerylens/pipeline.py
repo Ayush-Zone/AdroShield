@@ -134,7 +134,7 @@ def run_pipeline(file_path: str) -> EvidenceBundle:
     if is_invoice and ocr_result and ocr_result.status == IngestionStatus.VALID:
         try:
             pack = extract_invoice_pack(ocr_result)
-            ref_date = pack.invoice_date.value if (pack.invoice_date and pack.invoice_date.value) else datetime.now().date()
+            ref_date = datetime.now().date()
             cons_records = run_all_consistency_checks(pack, ref_date)
             for r in cons_records:
                 r.provenance.source_file_sha256 = source_sha256
