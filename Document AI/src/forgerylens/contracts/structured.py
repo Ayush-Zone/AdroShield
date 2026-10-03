@@ -8,7 +8,12 @@ from pydantic import BaseModel, Field
 class DocumentType(str, Enum):
     """Detected conceptual type of the document."""
     INVOICE = "invoice"
+    ID_DOCUMENT = "id_document"
+    MEDICAL_BILL = "medical_bill"
+    POLICE_REPORT = "police_report"
+    OTHER = "other"
     UNKNOWN = "unknown"
+    AMBIGUOUS = "ambiguous"
     UNSUPPORTED = "unsupported"
 
 
