@@ -35,10 +35,23 @@ Input (ID / Selfie)
    └── Triage state evaluation (1 face vs 0 vs multiple)
        │
        ▼
-[Deferred to Phase 3]
-4. Face Embedding & Similarity Comparison (Phase 3)
-5. Structured Identity Result
-```
+3. Face Detection & Triage (Phase 2)
+   ├── Abstract BaseFaceDetector interface (pluggable engines)
+   ├── Lightweight Haar Cascade implementation (OpenCV headless)
+   ├── Bounding box extraction (x, y, w, h)
+   └── Triage state evaluation (1 face vs 0 vs multiple)
+       │
+       ▼
+4. Face Embedding (Phase 3)
+   ├── DeepFace extraction (Facenet512 default)
+   ├── Isolated face cropping from detected bounding boxes
+   └── try/except imports for modular deployment
+       │
+       ▼
+5. Similarity & Orchestration (Phase 4 & 5)
+   ├── Cosine distance calculation
+   ├── Identity matcher wrapper
+   └── Final IdentityResult output
 
 ---
 
@@ -60,11 +73,18 @@ Phase 2 introduces a modular face detection layer with strict triage rules:
 
 ---
 
+## Phase 3-5: Embeddings, Similarity & Matching
+
+The final phases implement the matching capability using the `deepface` library.
+- **`DeepFaceEmbedder`**: Extracts high-dimensional facial embeddings. It skips internal DeepFace detection in favor of our own validated bounding boxes.
+- **`compare_embeddings`**: Calculates cosine distance between the selfie and document embeddings.
+- **`IdentityMatcher`**: Orchestrates the entire pipeline, from validation down to the final similarity output.
+
+---
+
 ## What Is Intentionally NOT Implemented Yet
 To maintain strict development discipline:
-- ❌ **No Face Embeddings / Recognition Models:** DeepFace, FaceNet512, PyTorch, and TensorFlow are intentionally deferred to Phase 3.
-- ❌ **No Similarity or Distance Calculations:** Cosine distance and threshold matching will be introduced in Phase 3.
-- ❌ **No Identity Verification or Fraud Decisions:** No legal identity verification or risk scoring.
+- ❌ **No Identity Verification or Fraud Decisions:** No legal identity verification or risk scoring. The output is purely a similarity signal.
 - ❌ **No Backend/API Integration:** Backend orchestrator integration occurs after core contracts are finalized.
 
 ---

@@ -13,6 +13,13 @@ from .face_detector import (
     HaarCascadeFaceDetector,
     detect_faces,
 )
+from .embedder import (
+    BaseFaceEmbedder,
+    DeepFaceEmbedder,
+    FaceEmbeddingResult,
+)
+from .similarity import SimilarityResult, compare_embeddings
+from .matcher import MatchResult, IdentityMatcher
 
 __all__ = [
     "ImageValidationResult",
@@ -25,4 +32,11 @@ __all__ = [
     "BaseFaceDetector",
     "HaarCascadeFaceDetector",
     "detect_faces",
+    "BaseFaceEmbedder",
+    "DeepFaceEmbedder",
+    "FaceEmbeddingResult",
+    "SimilarityResult",
+    "compare_embeddings",
+    "MatchResult",
+    "IdentityMatcher",
 ]
