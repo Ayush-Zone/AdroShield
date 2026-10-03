@@ -1,0 +1,19 @@
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables / secrets
+.env
+
+# Local model files
+*.pt
+*.pth
+
+# Test images
+test_images/
+
+# VS Code local settings
+.vscode/
