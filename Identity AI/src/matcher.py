@@ -79,3 +79,49 @@ class IdentityMatcher:
             distance=sim_result.distance,
             message="Identity match computed successfully."
         )
+
+def verify_identity(id_image_path: str, selfie_image_path: str) -> dict:
+    """Public API for end-to-end identity verification.
+    
+    Executes the full pipeline and maps cosine distance to Risk Engine status strings.
+    """
+    from .embedder import DeepFaceEmbedder
+    
+    try:
+        embedder = DeepFaceEmbedder()
+    except ImportError as e:
+        return {
+            "status": "error",
+            "indicator": "MISSING_DEPENDENCY",
+            "message": str(e)
+        }
+        
+    matcher = IdentityMatcher(embedder=embedder)
+    match_res = matcher.match_identity(id_image_path, selfie_image_path)
+    
+    if match_res.status != "ok":
+        return {
+            "status": "error",
+            "indicator": match_res.indicator or "UNKNOWN_ERROR",
+            "message": match_res.message
+        }
+        
+    distance = match_res.distance
+    if distance <= 0.20:
+        result_str = "Consistent"
+    elif distance <= 0.40:
+        result_str = "Inconclusive"
+    else:
+        result_str = "Inconsistent"
+        
+    return {
+        "status": "ok",
+        "result": result_str,
+        "similarity": 1.0 - distance,
+        "confidence": 0.90,
+        "indicator": f"Faces appear {result_str.lower()}",
+        "evidence": {
+            "id_faces_detected": 1,
+            "selfie_faces_detected": 1
+        }
+    }

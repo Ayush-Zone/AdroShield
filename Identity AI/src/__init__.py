@@ -19,7 +19,7 @@ from .embedder import (
     FaceEmbeddingResult,
 )
 from .similarity import SimilarityResult, compare_embeddings
-from .matcher import MatchResult, IdentityMatcher
+from .matcher import MatchResult, IdentityMatcher, verify_identity
 
 __all__ = [
     "ImageValidationResult",
@@ -39,4 +39,5 @@ __all__ = [
     "compare_embeddings",
     "MatchResult",
     "IdentityMatcher",
+    "verify_identity",
 ]
