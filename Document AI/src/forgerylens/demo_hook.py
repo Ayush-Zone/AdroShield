@@ -3,73 +3,62 @@ from forgerylens.contracts.evidence import EvidenceBundle
 
 def generate_demo_ui_payload(bundle: EvidenceBundle) -> Dict[str, Any]:
     """
-    Transforms the backend ForgeryLens EvidenceBundle into a flat, 
-    UI-friendly payload with bounding boxes and messages for a frontend demo overlay.
+    Transforms the backend ForgeryLens EvidenceBundle into a UI-friendly payload
+    with evidence passthrough and strictly derived findings.
     """
-    ui_findings = []
+    evidence_list = []
+    findings = []
     
     for record in bundle.evidence:
-        # Skip routine OK records unless they are specific consistency passes
-        if record.status == "ok" and not record.type.startswith("consistency_check"):
-            continue
-            
-        finding = {
+        # Pass through exactly as is
+        record_dict = {
             "id": record.id,
             "type": record.type,
-            "status": record.status.value,
+            "observation": record.observation,
+            "location": record.location.model_dump() if hasattr(record.location, "model_dump") else record.location.dict() if hasattr(record.location, "dict") else record.location.__dict__ if record.location else None,
             "method": record.method,
-            "message": "",
-            "regions": [], # List of {page, x, y, width, height}
-            "raw_image_url": record.raw_ref # E.g., for ELA map overlays
+            "confidence": getattr(record, "confidence", None),
+            "status": record.status.value if hasattr(record.status, "value") else str(record.status),
+            "limitations": getattr(record, "limitations", None),
+            "raw_ref": record.raw_ref
         }
         
-        # Extract messages and regions based on observation structure
+        evidence_list.append(record_dict)
+        
+        # Deterministic rules for findings
         obs = record.observation
         if isinstance(obs, dict):
-            # 1. Pixel/ELA regions
-            if "bounding_box" in obs:
-                box = obs["bounding_box"]
-                page_num = obs.get("page", 1)  # Default to 1 if missing
-                finding["regions"].append({
-                    "page": page_num,
-                    "x": box.get("x", 0.0),
-                    "y": box.get("y", 0.0),
-                    "width": box.get("width", 0.0),
-                    "height": box.get("height", 0.0)
+            # 1. ELA regions
+            if record.type == "forensic_ela_region":
+                mag = obs.get("raw_difference_magnitude", 0)
+                findings.append({
+                    "finding_id": f"fnd_{record.id}",
+                    "summary": f"ELA region detected with magnitude {mag}",
+                    "evidence_ids": [record.id]
                 })
-                score = obs.get("suspicious_score", 0.0)
-                finding["message"] = f"Anomalous pixel region detected (Score: {score:.2f})"
             
-            # 2. Consistency checks
-            elif "values_compared" in obs:
-                res = obs.get("result", "unknown")
-                if res == "mismatch":
-                    finding["message"] = f"Consistency mismatch detected in {record.type}"
-                elif res in ("exact", "within_rounding"):
-                    finding["message"] = f"Consistency verified: {record.type}"
-                else:
-                    finding["message"] = f"Consistency check: {res}"
-                    
-                # If region data was piped through (currently raw_value and parsed are there, but we can accommodate future region propagation)
-                # Actually, consistency checks in Phase 6 don't easily expose bounding boxes in EvidenceRecord observation yet.
-                # But we provide the schema structure for it.
-            
-            # 3. Metadata/General Errors
-            elif "reasons" in obs:
-                finding["message"] = " | ".join(obs["reasons"])
-            elif "errors" in obs:
-                finding["message"] = " | ".join(obs["errors"])
-            else:
-                finding["message"] = f"Finding from {record.type}"
+            # 2. Consistency checks mismatches
+            # In Phase 2, consistency check invalid results output 'result'='mismatch' or 'invalid'
+            if record.type.startswith("consistency_check"):
+                res = obs.get("result", "")
+                if res == "mismatch" or obs.get("status") == "invalid":
+                    findings.append({
+                        "finding_id": f"fnd_{record.id}",
+                        "summary": f"Consistency mismatch detected in {record.type}",
+                        "evidence_ids": [record.id]
+                    })
                 
-        else:
-            finding["message"] = str(obs)
+    # document_provenance serialization logic
+    prov_dict = {}
+    if hasattr(bundle.document_provenance, "to_dict"):
+        prov_dict = bundle.document_provenance.to_dict()
+    elif hasattr(bundle.document_provenance, "__dict__"):
+        prov_dict = bundle.document_provenance.__dict__.copy()
+        if "timestamp" in prov_dict and hasattr(prov_dict["timestamp"], "isoformat"):
+            prov_dict["timestamp"] = prov_dict["timestamp"].isoformat()
             
-        ui_findings.append(finding)
-        
     return {
-        "document_sha256": bundle.document_provenance.source_file_sha256,
-        "timestamp": bundle.document_provenance.timestamp.isoformat(),
-        "tool_version": bundle.document_provenance.tool_version,
-        "findings": ui_findings
+        "document_provenance": prov_dict,
+        "evidence": evidence_list,
+        "findings": findings
     }
