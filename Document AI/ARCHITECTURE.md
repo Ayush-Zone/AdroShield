@@ -320,3 +320,30 @@ Errors are explicit, investigator-readable, and avoid exposing raw internal stac
 ### 9.6 Known Limitations
 - Password-encrypted PDFs with protected content produce a diagnostic warning during ingestion; decrypting password-protected PDFs requires external keys.
 - Very large TIFF or HEIC formats are not part of the initial MVP scope.
+
+---
+
+## 10. Phase 3: OCR & Text Extraction Implementation
+
+Phase 3 introduces an isolated extraction layer designed to identify words and bounding boxes from validated documents.
+
+### 10.1 OCR Engine Abstraction
+- **PyMuPDF (`fitz`)**: Used as the primary extractor for Native PDFs, parsing text layers and bounding boxes without rasterization loss.
+- **Tesseract OCR (`pytesseract`)**: Used as a fallback for scanned PDFs and image formats (PNG, JPEG).
+- **Graceful Failures**: If Tesseract is not installed on the host machine, the orchestrator degrades safely, emitting warnings rather than crashing.
+
+### 10.2 Supported Extraction Cases
+1. **Case A (Native PDF)**: Iterates through pages, extracts words natively with point-based bounding boxes, and normalizes them.
+2. **Case B (Scanned PDF)**: Iterates through pages. If native text is insufficient (heuristic: < 3 words), renders the page to a pixmap at 150 DPI and invokes Tesseract.
+3. **Case C (Images)**: Loads the image and passes it directly to Tesseract.
+
+### 10.3 OCR Result Representation (`OCRResult`)
+- **`OCRExtractionMethod`**: Differentiates between `native_pdf` and `tesseract_ocr`.
+- **`OCRWord`**: Stores `text`, `confidence` (if available; None for native), and bounding box `x, y, width, height` strictly normalized to `[0.0, 1.0]`.
+- **`OCRPage`**: Contains the full text and word-level information.
+- **`OCRResult`**: An observational envelope matching `IngestedDocument`'s boundaries, retaining partial extraction capability and propagating warnings.
+
+### 10.4 Semantic Boundary & Integrity
+- **Observation Only**: The extraction layer answers *what* text is on the page, not *whether* it is correct, anomalous, or fraudulent.
+- **Preservation**: Low-confidence text is preserved exactly as recognized without speculative auto-correction.
+- **Memory Safety**: PDFs are rendered sequentially at a capped 150 DPI to prevent RAM exhaustion. Images avoid full decompression via prior Phase 2 limits.
