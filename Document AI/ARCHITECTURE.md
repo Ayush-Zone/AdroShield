@@ -378,3 +378,25 @@ Line items are extracted using a heuristic table-parsing strategy:
 - **No Validation**: Phase 4 strictly *extracts* the text on the page. It does not validate `Quantity * Rate == Amount` or check if `Subtotal + Tax == Grand Total`.
 - **Raw Evidence**: Extracted fields are wrapped in `FieldEvidence`, preserving the exact raw string (e.g., `"INV-2O45"`) and the spatial bounding box `Region` where it was found. This enables downstream forensics and verifiable investigator findings.
 - **Missing Data**: If a field is not found, it remains `None`. No values are fabricated or assumed.
+
+---
+
+## 12. Phase 5: Document Normalization
+
+Phase 5 introduces a robust, deterministic normalization layer that transforms a `StructuredInvoice` (raw extracted strings) into a `NormalizedInvoice` (typed, standardized values).
+
+### 12.1 Core Principle: Provenance Preservation
+Normalization in ForgeryLens never discards the original observation. Every `NormalizedField[T]` retains the underlying `FieldEvidence` (the `raw_value` and spatial `region`) while adding a parsed `normalized_value` (e.g., `float`, `CurrencyAmount`, or ISO date string).
+If a value is ambiguous, normalization marks it as `NormalizationStatus.AMBIGUOUS` and retains the original string, ensuring that downstream validation layers can appropriately flag human review instead of failing silently or guessing.
+
+### 12.2 Handled Data Types
+1. **Currencies**: Identifies common symbols (`₹`, `Rs.`, `INR`, `$`) and extracts numerical values, removing localized separators.
+2. **Numeric Values**: Safely extracts integers and floats from fields like quantities.
+3. **Dates**: Detects common formats (e.g., `YYYY-MM-DD`, `DD/MM/YYYY`, `12 Sep 2026`) and canonicalizes them to ISO-8601 (`YYYY-MM-DD`) strings.
+4. **Text and Identifiers**: Cleans excessive whitespaces and normalizes identifiers (like vehicle registrations and invoice numbers) to uppercase for consistent matching.
+
+### 12.3 Resilience and Partial Normalization
+A single malformed field does not cause the entire document's normalization to fail. If a tax amount cannot be interpreted as a number, it will be marked `AMBIGUOUS` while the rest of the document successfully standardizes.
+
+### 12.4 Strict Boundary
+Phase 5 explicitly **avoids business validation**. It does not check if line items add up to the grand total, nor does it generate fraud scores. It merely prepares a clean, typed representation for the future semantic validation and anomaly detection engines.

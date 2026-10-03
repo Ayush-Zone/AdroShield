@@ -10,6 +10,13 @@ from forgerylens.contracts.structured import (
     InvoiceLineItem,
     StructuredInvoice,
 )
+from forgerylens.contracts.normalized import (
+    NormalizationStatus,
+    NormalizedField,
+    CurrencyAmount,
+    NormalizedLineItem,
+    NormalizedInvoice,
+)
 
 __all__ = [
     "DocumentFormat",
@@ -25,4 +32,9 @@ __all__ = [
     "FieldEvidence",
     "InvoiceLineItem",
     "StructuredInvoice",
+    "NormalizationStatus",
+    "NormalizedField",
+    "CurrencyAmount",
+    "NormalizedLineItem",
+    "NormalizedInvoice",
 ]
