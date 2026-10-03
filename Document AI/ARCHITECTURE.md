@@ -400,3 +400,28 @@ A single malformed field does not cause the entire document's normalization to f
 
 ### 12.4 Strict Boundary
 Phase 5 explicitly **avoids business validation**. It does not check if line items add up to the grand total, nor does it generate fraud scores. It merely prepares a clean, typed representation for the future semantic validation and anomaly detection engines.
+
+---
+
+## 13. Phase 6: Document Validation Implementation
+
+Phase 6 introduces a deterministic semantic validation layer. It consumes the `NormalizedInvoice` and produces a `ValidationResult` containing specific `ValidationFinding` items.
+
+### 13.1 Core Principles
+- **Arithmetic Verification**: Determines whether mathematical relationships (e.g., `Quantity * Unit Price = Amount` or `Subtotal + Tax = Grand Total`) are valid within a precision tolerance of 0.01 to allow for legitimate rounding differences.
+- **Evidence Over Conclusion**: Validation strictly reports on discrepancies (e.g., "Grand total discrepancy: calculated 118.00, observed 110.00"). It explicitly avoids using terminology like "fraud", "fake", or "risk probability".
+- **Distinction of States**: Rules evaluate to `VALID`, `INVALID` (discrepancy), `MISSING` (required field absent), or `UNABLE_TO_VERIFY` (due to ambiguous normalization or missing dependencies).
+- **No Hallucination**: The engine never infers missing values. If Tax is missing, it does not calculate a hidden tax just because the Subtotal and Grand Total differ.
+
+### 13.2 Validation Rules Supported
+1. **Required Fields**: Asserts the presence of fields mandatory for an invoice (Invoice Number, Date, Vendor Name, Grand Total).
+2. **Line Item Arithmetic**: Checks `Quantity * Unit Price == Amount`.
+3. **Subtotal Arithmetic**: Verifies that the sum of line item amounts equals the stated subtotal.
+4. **Grand Total Arithmetic**: Verifies that `Subtotal + Taxes + Additional Charges - Discounts == Grand Total`.
+
+### 13.3 Provenance Preservation
+Every `ValidationFinding` retains a reference (`involved_fields`) to the exact normalized representation of all inputs involved in the rule (including their raw OCR string and spatial bounding box). This ensures that investigators can instantly see which region of the document caused the arithmetic failure.
+
+### 13.4 Scope Boundary
+- **No Forensics**: Does not evaluate metadata, EXIF, or font tampering.
+- **No Fraud Scores**: Does not aggregate findings into a global risk score. It simply hands `ValidationResult` off to the subsequent correlation engine.

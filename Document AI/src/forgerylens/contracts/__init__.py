@@ -17,6 +17,12 @@ from forgerylens.contracts.normalized import (
     NormalizedLineItem,
     NormalizedInvoice,
 )
+from forgerylens.contracts.validation import (
+    ValidationStatus,
+    ValidationSeverity,
+    ValidationFinding,
+    ValidationResult,
+)
 
 __all__ = [
     "DocumentFormat",
@@ -37,4 +43,8 @@ __all__ = [
     "CurrencyAmount",
     "NormalizedLineItem",
     "NormalizedInvoice",
+    "ValidationStatus",
+    "ValidationSeverity",
+    "ValidationFinding",
+    "ValidationResult",
 ]
