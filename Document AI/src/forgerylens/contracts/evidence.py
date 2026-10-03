@@ -34,3 +34,7 @@ class EvidenceRecord(BaseModel):
     limitations: str = Field(default="", description="Known limitations or caveats for this observation")
     raw_ref: Optional[str] = Field(default=None, description="Pointer/URI to the stored raw artifact")
     provenance: Provenance = Field(..., description="Provenance information")
+
+class EvidenceBundle(BaseModel):
+    document_provenance: Provenance = Field(..., description="Provenance for the overall document processing")
+    evidence: list[EvidenceRecord] = Field(default_factory=list, description="List of all evidence records gathered")

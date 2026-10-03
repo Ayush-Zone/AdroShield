@@ -425,3 +425,9 @@ Every `ValidationFinding` retains a reference (`involved_fields`) to the exact n
 ### 13.4 Scope Boundary
 - **No Forensics**: Does not evaluate metadata, EXIF, or font tampering.
 - **No Fraud Scores**: Does not aggregate findings into a global risk score. It simply hands `ValidationResult` off to the subsequent correlation engine.
+
+---
+
+## Phase 10: Orchestration
+
+The pipeline entry point orchestrates extraction and forensics deterministically, mapping all failures to EvidenceBundle records.
