@@ -1,7 +1,12 @@
-# Identity AI - Phase 1 Requirements (Validation & Preprocessing)
+# Identity AI Requirements
+# Phase 1: Validation & Preprocessing
 Pillow>=10.0.0
 pytest>=7.0.0
 
-# NOTE: Face detection and face embedding model dependencies
-# (such as DeepFace, FaceNet512, TensorFlow, PyTorch) are pending
-# team architecture approval and are intentionally NOT included in Phase 1.
+# Phase 2: Lightweight Face Detection
+opencv-python-headless>=4.8.0,<5.0.0
+numpy>=1.24.0
+
+# NOTE: Face embedding and similarity comparison dependencies
+# (such as DeepFace, FaceNet512, PyTorch, TensorFlow) are intentionally
+# deferred to Phase 3 pending team approval.
