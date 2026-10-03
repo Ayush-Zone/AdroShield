@@ -1,157 +1,680 @@
-import sys
-import json
+from pathlib import Path
 
 import torch
-import torch.nn as nn
 from PIL import Image
-from torchvision import transforms
-from transformers import CLIPVisionModel
-from huggingface_hub import hf_hub_download
+from transformers import AutoImageProcessor, AutoModelForImageClassification
 
 
-# -----------------------------
-# Settings
-# -----------------------------
+# ============================================================
+# CONFIGURATION
+# ============================================================
 
-MODEL_REPO = "husseinelsaadi/aidetect-vit-b16"
-CHECKPOINT_FILE = "runC/checkpoints/best.pt"
-SUMMARY_FILE = "runC/summary.json"
+MODEL_ID = "obuladinnesai/claim-photo-integrity-detector-v1"
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+BASE_DIR = Path(__file__).resolve().parent
 
+REAL_FOLDER = BASE_DIR / "test_images" / "real"
+FAKE_FOLDER = BASE_DIR / "test_images" / "Fake"
 
-# -----------------------------
-# Model
-# -----------------------------
+TILE_SIZE = 224
+OVERLAP = 0.25
+BATCH_SIZE = 16
 
-class AIImageDetector(nn.Module):
-    def __init__(self):
-        super().__init__()
+SUSPICIOUS_THRESHOLD = 0.80
 
-        self.backbone = CLIPVisionModel.from_pretrained(
-            "openai/clip-vit-base-patch16"
-        )
-
-        self.head = nn.Sequential(
-            nn.LayerNorm(768),
-            nn.Dropout(0.1),
-            nn.Linear(768, 1),
-        )
-
-    def forward(self, x):
-        output = self.backbone(pixel_values=x)
-
-        # CLS token
-        features = output.last_hidden_state[:, 0]
-
-        return self.head(features)
+SUPPORTED_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".bmp",
+    ".tiff",
+}
 
 
-# -----------------------------
-# Load trained weights
-# -----------------------------
+# ============================================================
+# DEVICE
+# ============================================================
 
-print("Loading AI detector...")
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+    print(f"\nGPU: {torch.cuda.get_device_name(0)}")
+else:
+    device = torch.device("cpu")
+    print("\nWARNING: CUDA unavailable. Using CPU.")
 
-checkpoint_path = hf_hub_download(
-    repo_id=MODEL_REPO,
-    filename=CHECKPOINT_FILE,
+
+# ============================================================
+# LOAD MODEL ONCE
+# ============================================================
+
+print("\nLoading image processor...")
+
+processor = AutoImageProcessor.from_pretrained(
+    MODEL_ID
 )
 
-summary_path = hf_hub_download(
-    repo_id=MODEL_REPO,
-    filename=SUMMARY_FILE,
+print("Loading model...")
+
+model = AutoModelForImageClassification.from_pretrained(
+    MODEL_ID
 )
 
-checkpoint = torch.load(
-    checkpoint_path,
-    map_location="cpu",
-    weights_only=False,
-)
-
-model = AIImageDetector()
-
-model.load_state_dict(
-    checkpoint["model"],
-    strict=True,
-)
-
-model.to(device)
+model = model.to(device)
 model.eval()
 
 
-# -----------------------------
-# Calibration
-# -----------------------------
+# ============================================================
+# FIND AI / FAKE CLASS
+# ============================================================
 
-with open(summary_path, "r") as f:
-    summary = json.load(f)
+print("\nModel classes:")
 
-temperature = summary.get("temperature", 1.0)
+for class_id, label in model.config.id2label.items():
+    print(f"  {class_id}: {label}")
 
-# Official demo uses 0.71 for general uploaded images.
-threshold = 0.71
+labels = list(model.config.id2label.values())
+
+ai_label = None
+
+for label in labels:
+
+    label_lower = label.lower()
+
+    if (
+        "ai" in label_lower
+        or "fake" in label_lower
+        or "synthetic" in label_lower
+    ):
+        ai_label = label
+        break
+
+if ai_label is None:
+    raise RuntimeError(
+        "Could not identify AI/fake label. "
+        f"Available labels: {labels}"
+    )
+
+print(f"\nAI label: {ai_label}")
 
 
-# -----------------------------
-# Image preprocessing
-# -----------------------------
+# ============================================================
+# GENERATE OVERLAPPING TILES
+# ============================================================
 
-preprocess = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
+def generate_tiles(image):
 
-    transforms.Normalize(
-        mean=[0.48145466, 0.4578275, 0.40821073],
-        std=[0.26862954, 0.26130258, 0.27577711],
-    ),
-])
+    width, height = image.size
+
+    stride = int(
+        TILE_SIZE * (1 - OVERLAP)
+    )
+
+    x_positions = list(
+        range(
+            0,
+            max(width - TILE_SIZE, 0) + 1,
+            stride,
+        )
+    )
+
+    y_positions = list(
+        range(
+            0,
+            max(height - TILE_SIZE, 0) + 1,
+            stride,
+        )
+    )
+
+    if (
+        not x_positions
+        or x_positions[-1] + TILE_SIZE < width
+    ):
+        x_positions.append(
+            max(width - TILE_SIZE, 0)
+        )
+
+    if (
+        not y_positions
+        or y_positions[-1] + TILE_SIZE < height
+    ):
+        y_positions.append(
+            max(height - TILE_SIZE, 0)
+        )
+
+    x_positions = sorted(set(x_positions))
+    y_positions = sorted(set(y_positions))
+
+    tiles = []
+
+    for y in y_positions:
+
+        for x in x_positions:
+
+            right = min(
+                x + TILE_SIZE,
+                width
+            )
+
+            bottom = min(
+                y + TILE_SIZE,
+                height
+            )
+
+            tile = image.crop(
+                (x, y, right, bottom)
+            )
+
+            if tile.size != (
+                TILE_SIZE,
+                TILE_SIZE,
+            ):
+
+                padded = Image.new(
+                    "RGB",
+                    (TILE_SIZE, TILE_SIZE),
+                    (0, 0, 0),
+                )
+
+                padded.paste(
+                    tile,
+                    (0, 0),
+                )
+
+                tile = padded
+
+            tiles.append({
+                "image": tile,
+                "x": x,
+                "y": y,
+            })
+
+    return tiles
 
 
-# -----------------------------
-# Prediction
-# -----------------------------
+# ============================================================
+# ANALYZE ONE IMAGE
+# ============================================================
 
-def predict(image_path):
+def analyze_image(image_path):
 
-    image = Image.open(image_path).convert("RGB")
+    image = Image.open(
+        image_path
+    ).convert("RGB")
 
-    image_tensor = preprocess(image)
-    image_tensor = image_tensor.unsqueeze(0).to(device)
+    tiles = generate_tiles(image)
 
-    with torch.no_grad():
+    tile_scores = []
 
-        logit = model(image_tensor)
+    # --------------------------------------------
+    # Process tiles in batches
+    # --------------------------------------------
 
-        logit = logit / temperature
+    for start in range(
+        0,
+        len(tiles),
+        BATCH_SIZE,
+    ):
 
-        ai_probability = torch.sigmoid(logit).item()
+        batch = tiles[
+            start:start + BATCH_SIZE
+        ]
 
-    if ai_probability >= threshold:
-        prediction = "AI-GENERATED"
-        confidence = ai_probability
+        batch_images = [
+            item["image"]
+            for item in batch
+        ]
+
+        inputs = processor(
+            images=batch_images,
+            return_tensors="pt",
+        )
+
+        inputs = {
+            key: value.to(device)
+            for key, value
+            in inputs.items()
+        }
+
+        with torch.inference_mode():
+
+            outputs = model(
+                **inputs
+            )
+
+        probabilities = torch.softmax(
+            outputs.logits,
+            dim=-1,
+        )
+
+        for index, probability in enumerate(
+            probabilities
+        ):
+
+            tile = batch[index]
+
+            ai_score = 0.0
+
+            for class_id, score in enumerate(
+                probability
+            ):
+
+                label = (
+                    model.config
+                    .id2label[class_id]
+                )
+
+                if label == ai_label:
+                    ai_score = score.item()
+                    break
+
+            tile_scores.append({
+                "x": tile["x"],
+                "y": tile["y"],
+                "score": ai_score,
+            })
+
+    # --------------------------------------------
+    # Sort suspicious areas
+    # --------------------------------------------
+
+    tile_scores.sort(
+        key=lambda item: item["score"],
+        reverse=True,
+    )
+
+    scores = [
+        item["score"]
+        for item in tile_scores
+    ]
+
+    average_ai = (
+        sum(scores) / len(scores)
+    )
+
+    max_ai = max(scores)
+
+    top_count = max(
+        1,
+        int(len(scores) * 0.10),
+    )
+
+    top_scores = scores[:top_count]
+
+    top_10_average = (
+        sum(top_scores)
+        / len(top_scores)
+    )
+
+    suspicious_tiles = [
+        item
+        for item in tile_scores
+        if item["score"]
+        >= SUSPICIOUS_THRESHOLD
+    ]
+
+    # ========================================================
+    # DECISION
+    # ========================================================
+
+    if (
+        max_ai >= 0.95
+        and len(suspicious_tiles) >= 1
+    ):
+
+        decision = "MANIPULATION SUSPECTED"
+
+    elif top_10_average >= 0.75:
+
+        decision = "MANIPULATION SUSPECTED"
+
+    elif average_ai >= 0.50:
+
+        decision = "REVIEW"
+
     else:
-        prediction = "REAL"
-        confidence = 1 - ai_probability
+
+        decision = "LIKELY REAL"
+
+    return {
+        "image": image_path.name,
+        "width": image.size[0],
+        "height": image.size[1],
+        "tiles": len(tile_scores),
+        "average_ai": average_ai,
+        "max_ai": max_ai,
+        "top_10_average": top_10_average,
+        "suspicious_tiles": len(
+            suspicious_tiles
+        ),
+        "decision": decision,
+    }
+
+
+# ============================================================
+# GET DATASET IMAGES
+# ============================================================
+
+def get_images(folder):
+
+    if not folder.exists():
+
+        print(
+            f"\nFolder not found: {folder}"
+        )
+
+        return []
+
+    return sorted([
+        file
+        for file in folder.iterdir()
+        if (
+            file.is_file()
+            and file.suffix.lower()
+            in SUPPORTED_EXTENSIONS
+        )
+    ])
+
+
+# ============================================================
+# TEST DATASET
+# ============================================================
+
+def test_dataset(
+    folder,
+    expected_type,
+):
+
+    images = get_images(folder)
+
+    total = len(images)
+
+    correct = 0
+    wrong = 0
+    review = 0
 
     print()
-    print("Image:", image_path)
-    print("Prediction:", prediction)
-    print(f"AI probability: {ai_probability * 100:.2f}%")
-    print(f"Confidence: {confidence * 100:.2f}%")
-    print("Device:", device)
+    print("=" * 75)
+    print(
+        f"TESTING {expected_type} DATASET"
+    )
+    print("=" * 75)
+
+    print(
+        f"Images found: {total}"
+    )
+
+    for index, image_path in enumerate(
+        images,
+        start=1,
+    ):
+
+        print()
+        print(
+            f"[{index}/{total}] "
+            f"{image_path.name}"
+        )
+
+        try:
+
+            result = analyze_image(
+                image_path
+            )
+
+            decision = result["decision"]
+
+            # ------------------------------------
+            # Determine correctness
+            # ------------------------------------
+
+            if expected_type == "REAL":
+
+                is_correct = (
+                    decision == "LIKELY REAL"
+                )
+
+            else:
+
+                is_correct = (
+                    decision
+                    == "MANIPULATION SUSPECTED"
+                )
+
+            if decision == "REVIEW":
+
+                review += 1
+                status = "REVIEW"
+
+            elif is_correct:
+
+                correct += 1
+                status = "CORRECT"
+
+            else:
+
+                wrong += 1
+                status = "WRONG"
+
+            print(
+                f"Tiles          : "
+                f"{result['tiles']}"
+            )
+
+            print(
+                f"Average AI     : "
+                f"{result['average_ai']:.2%}"
+            )
+
+            print(
+                f"Maximum AI     : "
+                f"{result['max_ai']:.2%}"
+            )
+
+            print(
+                f"Top 10% AI     : "
+                f"{result['top_10_average']:.2%}"
+            )
+
+            print(
+                f"Suspicious     : "
+                f"{result['suspicious_tiles']}"
+            )
+
+            print(
+                f"Decision       : "
+                f"{decision}"
+            )
+
+            print(
+                f"Result         : "
+                f"{status}"
+            )
+
+        except Exception as error:
+
+            wrong += 1
+
+            print(
+                f"ERROR: {error}"
+            )
+
+    # --------------------------------------------------------
+    # Dataset accuracy
+    # --------------------------------------------------------
+
+    accuracy = (
+        (correct / total) * 100
+        if total > 0
+        else 0
+    )
+
+    return {
+        "total": total,
+        "correct": correct,
+        "wrong": wrong,
+        "review": review,
+        "accuracy": accuracy,
+    }
 
 
-# -----------------------------
-# Run from command line
-# -----------------------------
+# ============================================================
+# MAIN
+# ============================================================
+
+def main():
+
+    print()
+    print("=" * 75)
+    print("CLAIM PHOTO INTEGRITY DETECTOR")
+    print("=" * 75)
+
+    print(f"Device : {device}")
+    print(f"Model  : {MODEL_ID}")
+
+    # --------------------------------------------------------
+    # REAL dataset
+    # --------------------------------------------------------
+
+    real_results = test_dataset(
+        REAL_FOLDER,
+        "REAL",
+    )
+
+    # --------------------------------------------------------
+    # FAKE dataset
+    # --------------------------------------------------------
+
+    fake_results = test_dataset(
+        FAKE_FOLDER,
+        "FAKE",
+    )
+
+    # --------------------------------------------------------
+    # Overall statistics
+    # --------------------------------------------------------
+
+    total = (
+        real_results["total"]
+        + fake_results["total"]
+    )
+
+    correct = (
+        real_results["correct"]
+        + fake_results["correct"]
+    )
+
+    wrong = (
+        real_results["wrong"]
+        + fake_results["wrong"]
+    )
+
+    review = (
+        real_results["review"]
+        + fake_results["review"]
+    )
+
+    overall_accuracy = (
+        (correct / total) * 100
+        if total > 0
+        else 0
+    )
+
+    # ========================================================
+    # FINAL COMPARISON
+    # ========================================================
+
+    print()
+    print()
+    print("=" * 75)
+    print("FINAL DATASET COMPARISON")
+    print("=" * 75)
+
+    print()
+    print("REAL IMAGES")
+    print("-" * 35)
+
+    print(
+        f"Total       : "
+        f"{real_results['total']}"
+    )
+
+    print(
+        f"Correct     : "
+        f"{real_results['correct']}"
+    )
+
+    print(
+        f"Wrong       : "
+        f"{real_results['wrong']}"
+    )
+
+    print(
+        f"Review      : "
+        f"{real_results['review']}"
+    )
+
+    print(
+        f"Accuracy    : "
+        f"{real_results['accuracy']:.2f}%"
+    )
+
+    print()
+    print("FAKE / MANIPULATED IMAGES")
+    print("-" * 35)
+
+    print(
+        f"Total       : "
+        f"{fake_results['total']}"
+    )
+
+    print(
+        f"Correct     : "
+        f"{fake_results['correct']}"
+    )
+
+    print(
+        f"Wrong       : "
+        f"{fake_results['wrong']}"
+    )
+
+    print(
+        f"Review      : "
+        f"{fake_results['review']}"
+    )
+
+    print(
+        f"Accuracy    : "
+        f"{fake_results['accuracy']:.2f}%"
+    )
+
+    print()
+    print("OVERALL")
+    print("-" * 35)
+
+    print(
+        f"Total       : {total}"
+    )
+
+    print(
+        f"Correct     : {correct}"
+    )
+
+    print(
+        f"Wrong       : {wrong}"
+    )
+
+    print(
+        f"Review      : {review}"
+    )
+
+    print(
+        f"Accuracy    : "
+        f"{overall_accuracy:.2f}%"
+    )
+
+    print()
+    print("=" * 75)
+
 
 if __name__ == "__main__":
-
-    if len(sys.argv) != 2:
-        print("Usage:")
-        print("python predict.py path_to_image")
-        sys.exit(1)
-
-    predict(sys.argv[1])
+    main()

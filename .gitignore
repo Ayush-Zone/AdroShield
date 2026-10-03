@@ -17,3 +17,5 @@ test_images/
 
 # VS Code local settings
 .vscode/
+# Downloaded model files
+models/
