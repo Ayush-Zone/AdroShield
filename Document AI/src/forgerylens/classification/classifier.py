@@ -1,6 +1,6 @@
 import uuid
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from forgerylens.contracts.evidence import EvidenceRecord, EvidenceStatus, Provenance
 from forgerylens.contracts.structured import DocumentType

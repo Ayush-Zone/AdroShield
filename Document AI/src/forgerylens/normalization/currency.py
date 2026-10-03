@@ -1,33 +1,35 @@
 import re
-from typing import Optional, Tuple
+from typing import Optional
+from decimal import Decimal
 from forgerylens.contracts.normalized import CurrencyAmount, NormalizedField, NormalizationStatus
 from forgerylens.contracts.structured import FieldEvidence
+from forgerylens.utils.numeric import parse_decimal
 
-
-def normalize_numeric(evidence: Optional[FieldEvidence]) -> Optional[NormalizedField[float]]:
-    """Normalize a basic numeric value (integer or float)."""
+def normalize_numeric(evidence: Optional[FieldEvidence]) -> Optional[NormalizedField[Decimal]]:
+    """Normalize a basic numeric value using a unified numeric parsing contract."""
     if not evidence:
         return None
 
-    raw_value = evidence.raw_value.strip()
+    cands, errs = parse_decimal(evidence.raw_value)
     
-    # Remove commas and spaces
-    clean_val = re.sub(r"[,\s]", "", raw_value)
-    
-    try:
-        parsed_val = float(clean_val)
+    if len(cands) == 1:
         return NormalizedField.from_evidence(
             evidence,
-            normalized_value=parsed_val,
+            normalized_value=cands[0],
             status=NormalizationStatus.SUCCESS
         )
-    except ValueError:
+    elif len(cands) > 1:
         return NormalizedField.from_evidence(
             evidence,
             status=NormalizationStatus.AMBIGUOUS,
-            warnings=[f"Could not parse '{raw_value}' as a number"]
+            warnings=[f"Ambiguous numeric format in '{evidence.raw_value}'. Candidates: {[str(c) for c in cands]}"]
         )
-
+    else:
+        return NormalizedField.from_evidence(
+            evidence,
+            status=NormalizationStatus.AMBIGUOUS,
+            warnings=errs
+        )
 
 def normalize_currency(evidence: Optional[FieldEvidence]) -> Optional[NormalizedField[CurrencyAmount]]:
     """Normalize a string containing an amount and optional currency symbol."""
@@ -52,19 +54,23 @@ def normalize_currency(evidence: Optional[FieldEvidence]) -> Optional[Normalized
         currency = "USD"
         clean_val = clean_val[:usd_match.start()] + clean_val[usd_match.end():]
         
-    # Clean the numeric part
-    clean_val = re.sub(r"[,\s]", "", clean_val)
+    cands, errs = parse_decimal(clean_val)
     
-    try:
-        parsed_amount = float(clean_val)
+    if len(cands) == 1:
         return NormalizedField.from_evidence(
             evidence,
-            normalized_value=CurrencyAmount(amount=parsed_amount, currency=currency),
+            normalized_value=CurrencyAmount(amount=cands[0], currency=currency),
             status=NormalizationStatus.SUCCESS
         )
-    except ValueError:
+    elif len(cands) > 1:
         return NormalizedField.from_evidence(
             evidence,
             status=NormalizationStatus.AMBIGUOUS,
-            warnings=[f"Could not parse '{raw_value}' as a currency amount"]
+            warnings=[f"Ambiguous currency amount format in '{raw_value}'. Candidates: {[str(c) for c in cands]}"]
+        )
+    else:
+        return NormalizedField.from_evidence(
+            evidence,
+            status=NormalizationStatus.AMBIGUOUS,
+            warnings=errs
         )

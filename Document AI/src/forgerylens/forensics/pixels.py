@@ -164,11 +164,8 @@ def run_ela(file_path: str) -> Tuple[bytes, List[EvidenceRecord]]:
     # Sort contours by area descending to get most significant first
     contours = sorted(contours, key=cv2.contourArea, reverse=True)
     emitted = 0
-    cap_hit = False
-    
     for c in contours:
         if emitted >= MAX_REGIONS_EMITTED:
-            cap_hit = True
             break
             
         x, y, w, h = cv2.boundingRect(c)

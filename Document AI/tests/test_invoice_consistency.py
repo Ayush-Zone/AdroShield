@@ -1,26 +1,35 @@
 import pytest
 from datetime import date
-from forgerylens.packs.invoice.models import ExtractedInvoicePack, ExtractedField, FieldStatus
-from forgerylens.packs.invoice.consistency import run_all_consistency_checks, check_subtotal_tax_vs_total
+from forgerylens.contracts.normalized import NormalizedInvoice, NormalizedField, NormalizationStatus, CurrencyAmount
+from forgerylens.packs.invoice.consistency import run_all_consistency_checks
 from forgerylens.contracts.evidence import EvidenceStatus
+from forgerylens.contracts.structured import DocumentType
+from decimal import Decimal
 
-def _make_field(val: str, status=FieldStatus.OK):
-    return ExtractedField(status=status, raw_value=val, parsed_value=val)
+def _make_field(val: str, status=NormalizationStatus.SUCCESS):
+    return NormalizedField(
+        raw_value=val,
+        status=status,
+        normalized_value=CurrencyAmount(amount=Decimal(val), currency="USD") if status == NormalizationStatus.SUCCESS and val else None
+    )
+    
+def _make_date_field(val: str, status=NormalizationStatus.SUCCESS):
+    return NormalizedField(
+        raw_value=val,
+        status=status,
+        normalized_value=val if status == NormalizationStatus.SUCCESS else None
+    )
 
 def _make_pack(sub="100.00", tax="10.00", total="110.00", inv_date="2026-10-01"):
-    return ExtractedInvoicePack(
-        invoice_number=_make_field("INV-1"),
-        invoice_date=_make_field(inv_date),
-        vendor_name=_make_field("Vendor"),
-        customer_name=_make_field("Cust"),
-        vehicle_number=_make_field("", FieldStatus.MISSING),
-        claim_number=_make_field("", FieldStatus.MISSING),
-        policy_number=_make_field("", FieldStatus.MISSING),
-        vin_chassis_number=_make_field("", FieldStatus.MISSING),
+    return NormalizedInvoice(
+        document_id="test",
+        document_type=DocumentType.INVOICE,
+        invoice_number=NormalizedField(raw_value="INV-1", status=NormalizationStatus.SUCCESS, normalized_value="INV-1"),
+        invoice_date=_make_date_field(inv_date),
+        vendor_name=NormalizedField(raw_value="Vendor", status=NormalizationStatus.SUCCESS, normalized_value="Vendor"),
+        customer_name=NormalizedField(raw_value="Cust", status=NormalizationStatus.SUCCESS, normalized_value="Cust"),
         subtotal=_make_field(sub),
         taxes=_make_field(tax),
-        discounts=_make_field("", FieldStatus.MISSING),
-        additional_charges=_make_field("", FieldStatus.MISSING),
         grand_total=_make_field(total),
         line_items=[]
     )
@@ -68,7 +77,7 @@ def test_round_off_line():
 
 def test_missing_field():
     pack = _make_pack()
-    pack.grand_total.status = FieldStatus.MISSING
+    pack.grand_total = None
     checks = run_all_consistency_checks(pack, date(2026, 10, 2))
     ev = checks[0]
     assert ev.status == EvidenceStatus.NOT_ANALYZABLE
@@ -76,16 +85,16 @@ def test_missing_field():
 
 def test_ambiguous_number():
     # 1.234,50 and 1,234.50 are both valid numbers if only one is present, 
-    # but 1.234 is ambiguous because it could be 1234 or 1.234.
-    pack = _make_pack(sub="1.234", tax="10.00", total="110.00")
+    pack = _make_pack(tax="10.00", total="110.00")
+    pack.subtotal = _make_field("1.234", NormalizationStatus.AMBIGUOUS)
     checks = run_all_consistency_checks(pack, date(2026, 10, 2))
     ev = checks[0]
     assert ev.status == EvidenceStatus.NOT_ANALYZABLE
     assert "Ambiguous numerical formats" in ev.observation["reason"]
     
 def test_ambiguous_date():
-    # 03/04/2026 can be Mar 4 or Apr 3
-    pack = _make_pack(inv_date="03/04/2026")
+    pack = _make_pack()
+    pack.invoice_date = _make_date_field("03/04/2026", NormalizationStatus.AMBIGUOUS)
     checks = run_all_consistency_checks(pack, date(2026, 10, 2))
     ev = checks[3] # invoice_date check
     assert ev.status == EvidenceStatus.NOT_ANALYZABLE

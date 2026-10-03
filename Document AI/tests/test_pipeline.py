@@ -29,12 +29,13 @@ def test_pipeline_missing_file():
 @patch("forgerylens.pipeline.ingest_document")
 @patch("forgerylens.pipeline.extract_document_text")
 @patch("forgerylens.pipeline.classify_document")
-@patch("forgerylens.pipeline.extract_invoice_pack")
+@patch("forgerylens.pipeline.parse_document")
+@patch("forgerylens.pipeline.normalize_document")
 @patch("forgerylens.pipeline.run_all_consistency_checks")
 @patch("forgerylens.pipeline.analyze_pdf")
 @patch("forgerylens.pipeline.analyze_pixels")
 def test_pipeline_happy_path(
-    mock_pixels, mock_meta_pdf, mock_cons, mock_pack, mock_classify, mock_ocr, mock_ingest, dummy_invoice_pdf
+    mock_pixels, mock_meta_pdf, mock_cons, mock_norm, mock_parse, mock_classify, mock_ocr, mock_ingest, dummy_invoice_pdf
 ):
     # Setup mocks
     mock_ingest.return_value = MagicMock(status=IngestionStatus.VALID, format=DocumentFormat.PDF, page_count=1)
@@ -48,8 +49,9 @@ def test_pipeline_happy_path(
     mock_class_record = EvidenceRecord(id=str(uuid.uuid4()), type="classification", status=EvidenceStatus.OK, observation={"document_type": DocumentType.INVOICE.value}, method="test", provenance=prov)
     mock_classify.return_value = mock_class_record
     
-    mock_pack.return_value = MagicMock(invoice_date=MagicMock(value=None))
-    mock_cons.return_value = [EvidenceRecord(id=str(uuid.uuid4()), type="invoice_consistency", status=EvidenceStatus.OK, observation={}, method="test", provenance=prov)]
+    mock_parse.return_value = MagicMock()
+    mock_norm.return_value = MagicMock()
+    mock_cons.return_value = [EvidenceRecord(id=str(uuid.uuid4()), type="consistency_check_subtotal_tax_vs_total", status=EvidenceStatus.OK, observation={}, method="test", provenance=prov)]
     
     mock_meta_pdf.return_value = (None, [EvidenceRecord(id=str(uuid.uuid4()), type="forensic_metadata", status=EvidenceStatus.OK, observation={}, method="test", provenance=prov)])
     mock_pixels.return_value = (b"dummy", [EvidenceRecord(id=str(uuid.uuid4()), type="forensic_ela_region", status=EvidenceStatus.OK, observation={}, method="test", provenance=prov)])
@@ -63,7 +65,7 @@ def test_pipeline_happy_path(
     
     assert "ingestion" in types
     assert "text_extraction" in types
-    assert "invoice_consistency" in types
+    assert "consistency_check_subtotal_tax_vs_total" in types
     assert "forensic_metadata" in types
     
     # Pixel mock is called because it's a PDF
@@ -101,7 +103,7 @@ def test_pipeline_dependency_failure(
     assert types.get("classification") == EvidenceStatus.NOT_ANALYZABLE
     
     # Invoice consistency not called / skipped because classification is NOT_ANALYZABLE
-    assert "invoice_consistency" not in types
+    assert "pack_orchestration" not in types
     
     # Metadata and pixels still ran
     assert types.get("forensic_metadata") == EvidenceStatus.OK

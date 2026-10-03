@@ -2,7 +2,7 @@ import uuid
 import json
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Any, Union
+from typing import Union
 import fitz
 from PIL import Image
 import pytesseract
@@ -143,7 +143,7 @@ def extract_text(page: Union["fitz.Page", Image.Image], storage_dir: str | Path,
     # Read back to ensure unmodified!
     if raw_ref:
         with open(raw_ref, "r", encoding="utf-8") as f:
-            read_back = json.load(f)
+            _ = json.load(f)
             # The test will verify read_back matches raw_output
             
     status = EvidenceStatus.OK

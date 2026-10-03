@@ -1,7 +1,5 @@
 """Regex patterns and heuristics for structured field extraction."""
 
-import re
-
 # Invoice type indicators
 INVOICE_INDICATORS = [
     r"invoice",

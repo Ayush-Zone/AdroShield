@@ -1,10 +1,9 @@
 import os
 import uuid
 import hashlib
-import json
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 import fitz
 
 from forgerylens.contracts.document import DocumentFormat
@@ -14,17 +13,17 @@ from forgerylens.contracts.evidence import EvidenceRecord, EvidenceStatus, Prove
 
 from forgerylens.ingestion.reader import ingest_document
 from forgerylens.ocr.orchestrator import extract_document_text
-from forgerylens.ocr.evidence_extractor import extract_text
 from forgerylens.classification.classifier import classify_document
-from forgerylens.packs.invoice.extractor import extract_invoice_pack
 from forgerylens.packs.invoice.consistency import run_all_consistency_checks
 from forgerylens.forensics.metadata import analyze_pdf, analyze_image
 from forgerylens.forensics.pixels import analyze_pixels
+from forgerylens.extraction.parser import parse_document
+from forgerylens.normalization.normalizer import normalize_document
 
 STORAGE_ROOT = Path(__file__).resolve().parent.parent.parent / "forgerylens_storage"
 PIPELINE_VERSION = "1.0.0"
 
-def run_pipeline(file_path: str) -> EvidenceBundle:
+def run_pipeline(file_path: str, *, reference_date: Optional[datetime.date] = None) -> EvidenceBundle:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Missing file: {file_path}")
         
@@ -45,7 +44,7 @@ def run_pipeline(file_path: str) -> EvidenceBundle:
     )
     
     evidence_list: List[EvidenceRecord] = []
-    # 1. Ingestion (Phase 2)
+    # 1. Ingestion
     ingested_doc = ingest_document(file_path)
     if ingested_doc.status != IngestionStatus.VALID:
         evidence_list.append(EvidenceRecord(
@@ -68,7 +67,7 @@ def run_pipeline(file_path: str) -> EvidenceBundle:
         ))
         ingest_failed = False
 
-    # 2. OCR (Phase 3)
+    # 2. Text Extraction
     ocr_result = None
     if ingest_failed:
         evidence_list.append(EvidenceRecord(
@@ -92,11 +91,19 @@ def run_pipeline(file_path: str) -> EvidenceBundle:
                     provenance=doc_prov
                 ))
             else:
+                pages_meta = []
+                for p in ocr_result.pages:
+                    pages_meta.append({
+                        "page_number": p.page_number,
+                        "source": p.extraction_method.value,
+                        "word_count": len(p.words),
+                        "ocr_fallback_used": p.extraction_method.value == "TESSERACT_OCR" and ingested_doc.format == DocumentFormat.PDF
+                    })
                 evidence_list.append(EvidenceRecord(
                     id=str(uuid.uuid4()),
                     type="text_extraction",
                     status=EvidenceStatus.OK,
-                    observation={"pages_extracted": len(ocr_result.pages)},
+                    observation={"pages_extracted": len(ocr_result.pages), "pages": pages_meta},
                     method="orchestrator",
                     provenance=doc_prov
                 ))
@@ -111,7 +118,7 @@ def run_pipeline(file_path: str) -> EvidenceBundle:
                 provenance=doc_prov
             ))
 
-    # 3. Classification (Phase 4)
+    # 3. Document Classification
     classification_record = None
     if not ocr_result or ocr_result.status != IngestionStatus.VALID:
         evidence_list.append(EvidenceRecord(
@@ -127,29 +134,50 @@ def run_pipeline(file_path: str) -> EvidenceBundle:
         classification_record = classify_document(full_text, source_sha256)
         evidence_list.append(classification_record)
 
-    # 4. Invoice Consistency (Phase 5)
-    is_invoice = (classification_record and classification_record.status == EvidenceStatus.OK 
-                  and classification_record.observation.get("document_type") == DocumentType.INVOICE.value)
-                  
-    if is_invoice and ocr_result and ocr_result.status == IngestionStatus.VALID:
-        try:
-            pack = extract_invoice_pack(ocr_result)
-            ref_date = datetime.now().date()
-            cons_records = run_all_consistency_checks(pack, ref_date)
-            for r in cons_records:
-                r.provenance.source_file_sha256 = source_sha256
-                evidence_list.append(r)
-        except Exception as e:
+    # 4. Structured Extraction, Normalization & Consistency Checks
+    # Avoid silent skips (AF-1)
+    if classification_record:
+        doc_type_val = classification_record.observation.get("document_type")
+        cues = classification_record.observation.get("cues")
+        candidates = classification_record.observation.get("candidates")
+        
+        is_invoice = (classification_record.status == EvidenceStatus.OK and doc_type_val == DocumentType.INVOICE.value)
+        
+        if not is_invoice:
+            reason = f"Document type is {doc_type_val}"
+            if doc_type_val == DocumentType.AMBIGUOUS.value:
+                reason += f", candidates: {candidates}"
+            if cues:
+                reason += f", cues: {cues}"
+            
             evidence_list.append(EvidenceRecord(
                 id=str(uuid.uuid4()),
-                type="invoice_consistency",
+                type="pack_orchestration",
                 status=EvidenceStatus.NOT_ANALYZABLE,
-                observation={"reasons": [f"Extraction failed: {e}"]},
-                method="invoice_consistency",
+                observation={"reasons": [f"Extraction and consistency checks NOT run: {reason}"]},
+                method="pipeline",
                 provenance=doc_prov
             ))
+        elif ocr_result and ocr_result.status == IngestionStatus.VALID:
+            try:
+                structured_invoice = parse_document(ocr_result)
+                normalized_invoice = normalize_document(structured_invoice)
+                
+                cons_records = run_all_consistency_checks(normalized_invoice, reference_date)
+                for r in cons_records:
+                    r.provenance.source_file_sha256 = source_sha256
+                    evidence_list.append(r)
+            except Exception as e:
+                evidence_list.append(EvidenceRecord(
+                    id=str(uuid.uuid4()),
+                    type="pack_orchestration",
+                    status=EvidenceStatus.NOT_ANALYZABLE,
+                    observation={"reasons": [f"Extraction failed: {e}"]},
+                    method="pipeline",
+                    provenance=doc_prov
+                ))
 
-    # 5. Metadata Forensics (Phase 9)
+    # 5. Metadata Forensics
     try:
         if not ingest_failed and ingested_doc and ingested_doc.format == DocumentFormat.PDF:
             raw_meta, meta_records = analyze_pdf(file_path)
@@ -169,7 +197,7 @@ def run_pipeline(file_path: str) -> EvidenceBundle:
             provenance=doc_prov
         ))
 
-    # 6. Pixel Forensics (Phase 9)
+    # 6. Pixel Forensics
     try:
         if not ingest_failed and ingested_doc and ingested_doc.format == DocumentFormat.PDF:
             pdf_doc = fitz.open(file_path)
@@ -196,7 +224,7 @@ def run_pipeline(file_path: str) -> EvidenceBundle:
         else:
             raw_map, pixel_records = analyze_pixels(file_path, is_pdf_rasterized=False)
             if raw_map:
-                map_path = doc_storage_dir / f"ela_map.png"
+                map_path = doc_storage_dir / "ela_map.png"
                 with open(map_path, "wb") as f:
                     f.write(raw_map)
                 for r in pixel_records:

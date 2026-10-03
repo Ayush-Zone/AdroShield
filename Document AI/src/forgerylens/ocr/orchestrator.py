@@ -1,10 +1,9 @@
 """OCR orchestrator for document extraction."""
 
 import logging
-from pathlib import Path
 from PIL import Image
 
-from forgerylens.contracts.document import IngestedDocument, PageInfo
+from forgerylens.contracts.document import IngestedDocument
 from forgerylens.contracts.enums import DocumentFormat, IngestionStatus
 from forgerylens.contracts.ocr import (
     OCRResult,

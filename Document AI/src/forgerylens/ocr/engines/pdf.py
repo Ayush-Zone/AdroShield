@@ -2,7 +2,6 @@
 
 import logging
 from typing import List, Tuple
-from pathlib import Path
 
 from forgerylens.contracts.ocr import OCRWord
 

@@ -1,5 +1,4 @@
-import json
-from typing import Dict, Any, List
+from typing import Dict, Any
 from forgerylens.contracts.evidence import EvidenceBundle
 
 def generate_demo_ui_payload(bundle: EvidenceBundle) -> Dict[str, Any]:

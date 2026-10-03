@@ -1,9 +1,10 @@
 """Parser for converting OCR observations into structured documents."""
 
 import re
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional
 
 from forgerylens.contracts.ocr import OCRResult, OCRWord, OCRPage
+from forgerylens.contracts.spatial import normalize_bbox
 from forgerylens.contracts.structured import (
     DocumentType,
     FieldEvidence,
@@ -36,12 +37,16 @@ class TextLine:
         y_min = min(w.y for w in self.words)
         x_max = max(w.x + w.width for w in self.words)
         y_max = max(w.y + w.height for w in self.words)
+        
+        # Ensure bounding boxes are canonically mapped
+        nx, ny, nw, nh = normalize_bbox(x_min, y_min, x_max - x_min, y_max - y_min, 1.0, 1.0)
+        
         return Region(
             page_number=self.page_number,
-            x=x_min,
-            y=y_min,
-            width=x_max - x_min,
-            height=y_max - y_min
+            x=nx,
+            y=ny,
+            width=nw,
+            height=nh
         )
 
 def _group_words_into_lines(page: OCRPage, y_tolerance: float = 0.015) -> List[TextLine]:

@@ -1,7 +1,7 @@
 from typing import List, Optional, Any, Dict
 from decimal import Decimal, InvalidOperation
 
-from forgerylens.contracts.normalized import NormalizedInvoice, NormalizedField, CurrencyAmount, NormalizationStatus
+from forgerylens.contracts.normalized import NormalizedInvoice, NormalizedField, NormalizationStatus
 from forgerylens.contracts.structured import DocumentType
 from forgerylens.contracts.validation import ValidationResult, ValidationFinding, ValidationStatus, ValidationSeverity
 

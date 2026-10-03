@@ -77,7 +77,7 @@ def test_invoice_pack_ambiguous_dates():
     lines = [
         "Invoice No: INV-1234",
         "Date: 03/04/2026",
-        "Due Date: 15/04/2026",
+        "Date: 15/04/2026",
         "Grand Total: $110.00"
     ]
     ocr_result = _create_mock_ocr_result(lines)

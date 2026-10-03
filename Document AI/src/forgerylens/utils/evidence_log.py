@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from forgerylens.contracts.evidence import EvidenceRecord
 

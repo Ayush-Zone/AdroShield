@@ -37,17 +37,18 @@ class NormalizedField(BaseModel, Generic[T]):
             warnings=warnings or []
         )
 
+from decimal import Decimal
 
 class CurrencyAmount(BaseModel):
     """Normalized currency amount."""
-    amount: float = Field(..., description="The parsed decimal amount")
+    amount: Decimal = Field(..., description="The parsed decimal amount")
     currency: Optional[str] = Field(default=None, description="The identified currency code (e.g., INR)")
 
 
 class NormalizedLineItem(BaseModel):
     """Normalized representation of a line item."""
     description: Optional[NormalizedField[str]] = None
-    quantity: Optional[NormalizedField[float]] = None
+    quantity: Optional[NormalizedField[Decimal]] = None
     unit_price: Optional[NormalizedField[CurrencyAmount]] = None
     amount: Optional[NormalizedField[CurrencyAmount]] = None
 
