@@ -271,4 +271,52 @@ Document AI/
 
 ---
 
-*Phase 0 complete. No implementation code has been added. Awaiting approval to proceed to Phase 1.*
+## 9. Phase 2: Document Ingestion & Validation Implementation
+
+Phase 2 establishes the boundary between raw untrusted files and downstream OCR/extraction stages.
+
+### 9.1 Supported Input Types
+- **PDF (`application/pdf`)**: Single-page and multi-page native documents.
+- **PNG (`image/png`)**: Scanned document images or receipts.
+- **JPG / JPEG (`image/jpeg`)**: Document photographs and scans.
+
+### 9.2 Validation Responsibilities
+1. **Filesystem Sanity**: File existence, non-directory verification, and file read permissions.
+2. **Empty File Protection**: Rejection of 0-byte files with explicit `IngestionStatus.EMPTY` status.
+3. **Size Sanity Guard**: Maximum file size enforcement (configurable; default 50 MB) with `IngestionStatus.UNREADABLE`.
+4. **Magic Byte Verification**: Content-truth checking via magic bytes (`%PDF-`, `\x89PNG\r\n\x1a\n`, `\xff\xd8\xff`). Discrepancies between file extension and content signature are flagged as `IngestionStatus.CORRUPT`.
+5. **PDF Structure Integrity**: Verification of PDF header, page catalog, trailer marker `%%EOF`, page count, and `/MediaBox` dimension extraction for all pages.
+6. **Image Decoding Integrity**: Two-pass Pillow verification (`verify()` for corrupted bitstreams and header/chunk validation; decode pass for dimension and DPI extraction).
+
+### 9.3 Ingested Document Representation (`IngestedDocument`)
+- `document_id`: Unique evidence or document identifier.
+- `source_path`: Normalized path to source file.
+- `filename`: Original file basename.
+- `file_size_bytes`: Integer byte count.
+- `mime_type`: Detected MIME type (`application/pdf`, `image/png`, `image/jpeg`).
+- `format`: Normalized `DocumentFormat` enum (`pdf`, `png`, `jpeg`).
+- `page_count`: Number of validated readable pages.
+- `pages`: List of `PageInfo` (`page_number`, `width`, `height`, `dpi`, `is_readable`).
+- `status`: `IngestionStatus` (`valid`, `corrupt`, `unsupported`, `unreadable`, `empty`).
+- `warnings`: Non-fatal diagnostic messages (e.g. non-standard extensions, encryption dictionaries).
+- `errors`: Explicit failure reasons.
+- `is_valid`: Boolean property checking that status is `VALID` and no fatal errors exist.
+
+### 9.4 Error Behavior & Diagnostics
+Errors are explicit, investigator-readable, and avoid exposing raw internal stack traces:
+- `"file not found: <path>"`
+- `"empty file (0 bytes): <filename>"`
+- `"corrupt PDF: <reason>"`
+- `"corrupt image: cannot decode image data: <reason>"`
+- `"unsupported document type with extension '<ext>'"`
+- `"file extension is '<ext>' but file content does not match expected <format> signature"`
+- `"file exceeds maximum allowed size (<actual> > <limit> bytes)"`
+
+### 9.5 Explicit Boundary with OCR (Phase 3)
+- Phase 2 performs **zero text extraction, zero OCR, and zero semantic analysis**.
+- It hands off a validated `IngestedDocument` with confirmed page counts and dimensions to Phase 3.
+- If `status != IngestionStatus.VALID`, Phase 3 must skip OCR processing and report the ingestion error cleanly.
+
+### 9.6 Known Limitations
+- Password-encrypted PDFs with protected content produce a diagnostic warning during ingestion; decrypting password-protected PDFs requires external keys.
+- Very large TIFF or HEIC formats are not part of the initial MVP scope.
