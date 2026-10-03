@@ -12,25 +12,37 @@ def main():
     print("      === ADROSHIELD Identity AI: Live Demo ===")
     print("==================================================\n")
     
-    try:
-        id_path = input("Enter path to ID Document: ").strip().strip('"').strip("'")
-        selfie_path = input("Enter path to Selfie Image: ").strip().strip('"').strip("'")
-    except KeyboardInterrupt:
-        print("\nDemo aborted by user.")
-        sys.exit(0)
+    while True:
+        try:
+            id_path = input("Enter path to ID Document: ").strip().strip('"').strip("'")
+            selfie_path = input("Enter path to Selfie Image: ").strip().strip('"').strip("'")
+        except KeyboardInterrupt:
+            print("\nDemo aborted by user.")
+            sys.exit(0)
+            
+        if not id_path or not selfie_path:
+            print("Error: Both paths are required.")
+            continue
+            
+        print(f"\nAnalyzing ID: {id_path}")
+        print(f"Analyzing Selfie: {selfie_path}")
+        print("Running AI Pipeline...\n")
         
-    if not id_path or not selfie_path:
-        print("Error: Both paths are required.")
-        sys.exit(1)
-        
-    print(f"\nAnalyzing ID: {id_path}")
-    print(f"Analyzing Selfie: {selfie_path}")
-    print("Running AI Pipeline...\n")
-    
-    # Run the verification
-    result = verify_identity(id_path, selfie_path)
-    
-    print(json.dumps(result, indent=4))
+        try:
+            # Run the verification
+            result = verify_identity(id_path, selfie_path)
+            print(json.dumps(result, indent=4))
+        except Exception as e:
+            print("\n[!] FATAL ERROR during verification pipeline:")
+            print(str(e))
+            
+        try:
+            again = input("\nEvaluate another claim? (y/n): ").strip().lower()
+            if again == 'n':
+                break
+        except KeyboardInterrupt:
+            print("\nDemo aborted by user.")
+            break
 
 if __name__ == "__main__":
     main()

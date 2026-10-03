@@ -86,49 +86,59 @@ def verify_identity(id_image_path: str, selfie_image_path: str, detector_backend
     
     Executes the full pipeline and maps cosine distance to Risk Engine status strings.
     """
-    from .embedder import DeepFaceEmbedder
-    from .face_detector import RetinaFaceDetector, HaarCascadeFaceDetector
-    
     try:
-        embedder = DeepFaceEmbedder()
-    except ImportError as e:
+        from .embedder import DeepFaceEmbedder
+        from .face_detector import RetinaFaceDetector, HaarCascadeFaceDetector
+        
+        try:
+            embedder = DeepFaceEmbedder()
+        except ImportError as e:
+            return {
+                "status": "error",
+                "indicator": "MISSING_DEPENDENCY",
+                "message": str(e)
+            }
+            
+        if detector_backend == "retinaface":
+            detector = RetinaFaceDetector()
+        else:
+            detector = HaarCascadeFaceDetector()
+            
+        matcher = IdentityMatcher(embedder=embedder, detector=detector)
+        match_res = matcher.match_identity(id_image_path, selfie_image_path)
+        
+        if match_res.status != "ok":
+            return {
+                "status": "error",
+                "indicator": match_res.indicator or "UNKNOWN_ERROR",
+                "message": match_res.message
+            }
+            
+        distance = match_res.distance
+        if distance <= 0.20:
+            result_str = "Consistent"
+        elif distance <= 0.40:
+            result_str = "Inconclusive"
+        else:
+            result_str = "Inconsistent"
+            
+        return {
+            "status": "ok",
+            "result": result_str,
+            "similarity": 1.0 - distance,
+            "confidence": 0.90,
+            "indicator": f"Faces appear {result_str.lower()}",
+            "evidence": {
+                "id_faces_detected": 1,
+                "selfie_faces_detected": 1
+            }
+        }
+    except Exception as e:
         return {
             "status": "error",
-            "indicator": "MISSING_DEPENDENCY",
-            "message": str(e)
+            "result": None,
+            "similarity": None,
+            "confidence": None,
+            "indicator": "SYSTEM_ERROR",
+            "evidence": {"error_message": str(e)}
         }
-        
-    if detector_backend == "retinaface":
-        detector = RetinaFaceDetector()
-    else:
-        detector = HaarCascadeFaceDetector()
-        
-    matcher = IdentityMatcher(embedder=embedder, detector=detector)
-    match_res = matcher.match_identity(id_image_path, selfie_image_path)
-    
-    if match_res.status != "ok":
-        return {
-            "status": "error",
-            "indicator": match_res.indicator or "UNKNOWN_ERROR",
-            "message": match_res.message
-        }
-        
-    distance = match_res.distance
-    if distance <= 0.20:
-        result_str = "Consistent"
-    elif distance <= 0.40:
-        result_str = "Inconclusive"
-    else:
-        result_str = "Inconsistent"
-        
-    return {
-        "status": "ok",
-        "result": result_str,
-        "similarity": 1.0 - distance,
-        "confidence": 0.90,
-        "indicator": f"Faces appear {result_str.lower()}",
-        "evidence": {
-            "id_faces_detected": 1,
-            "selfie_faces_detected": 1
-        }
-    }
