@@ -3,14 +3,20 @@ from datetime import date
 from typing import List, Dict, Any
 import uuid
 
-from forgerylens.contracts.evidence import EvidenceRecord, EvidenceStatus, Provenance
+from forgerylens.contracts.evidence import EvidenceRecord, EvidenceStatus, Provenance, EvidenceLocation
 from forgerylens.contracts.normalized import NormalizedInvoice, NormalizationStatus
+from forgerylens.contracts.structured import Region
 
-def _create_evidence(check_name: str, status: EvidenceStatus, observation: Dict[str, Any]) -> EvidenceRecord:
+def _region_to_loc(r: Region | None) -> EvidenceLocation | None:
+    if not r: return None
+    return EvidenceLocation(page_number=r.page_number, x=r.x, y=r.y, width=r.width, height=r.height)
+
+def _create_evidence(check_name: str, status: EvidenceStatus, observation: Dict[str, Any], location: EvidenceLocation = None) -> EvidenceRecord:
     return EvidenceRecord(
         id=str(uuid.uuid4()),
         type=f"consistency_check_{check_name}",
         observation=observation,
+        location=location,
         method="rule_based",
         status=status,
         provenance=Provenance(
@@ -63,6 +69,7 @@ def check_subtotal_tax_vs_total(invoice: NormalizedInvoice) -> EvidenceRecord:
     else:
         result = "mismatch"
 
+    loc = _region_to_loc(tot.region) if tot.region else None
     return _create_evidence("subtotal_tax_vs_total", EvidenceStatus.OK, {
         "result": result,
         "values_compared": {
@@ -72,7 +79,7 @@ def check_subtotal_tax_vs_total(invoice: NormalizedInvoice) -> EvidenceRecord:
         },
         "computed_difference": str(diff),
         "tolerance": str(tolerance)
-    })
+    }, location=loc)
 
 def check_line_items_vs_subtotal(invoice: NormalizedInvoice) -> EvidenceRecord:
     if not invoice.line_items:
@@ -106,6 +113,7 @@ def check_line_items_vs_subtotal(invoice: NormalizedInvoice) -> EvidenceRecord:
     else:
         result = "mismatch"
 
+    loc = _region_to_loc(sub.region) if sub.region else None
     return _create_evidence("line_items_vs_subtotal", EvidenceStatus.OK, {
         "result": result,
         "values_compared": {
@@ -114,7 +122,7 @@ def check_line_items_vs_subtotal(invoice: NormalizedInvoice) -> EvidenceRecord:
         },
         "computed_difference": str(diff),
         "tolerance": str(tolerance)
-    })
+    }, location=loc)
 
 def check_tax_rate_vs_tax(invoice: NormalizedInvoice) -> EvidenceRecord:
     return _create_evidence("tax_rate_vs_tax", EvidenceStatus.NOT_ANALYZABLE, {
@@ -144,6 +152,7 @@ def check_invoice_date(invoice: NormalizedInvoice, reference_date: date | None) 
     else:
         result = "exact"
 
+    loc = _region_to_loc(inv_date_field.region) if inv_date_field.region else None
     return _create_evidence("invoice_date", EvidenceStatus.OK, {
         "result": result,
         "values_compared": {
@@ -152,7 +161,7 @@ def check_invoice_date(invoice: NormalizedInvoice, reference_date: date | None) 
         },
         "computed_difference_days": diff_days,
         "tolerance": 0
-    })
+    }, location=loc)
 
 def run_all_consistency_checks(invoice: NormalizedInvoice, reference_date: date | None) -> List[EvidenceRecord]:
     return [

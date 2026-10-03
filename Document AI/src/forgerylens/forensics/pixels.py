@@ -5,7 +5,7 @@ import numpy as np
 from typing import Dict, Any, List, Tuple
 from PIL import Image
 
-from forgerylens.contracts.evidence import EvidenceRecord, EvidenceStatus, Provenance
+from forgerylens.contracts.evidence import EvidenceRecord, EvidenceStatus, Provenance, EvidenceLocation
 from forgerylens.contracts.spatial import normalize_bbox
 
 # --- Named Constants ---
@@ -26,11 +26,12 @@ ELA_LIMITATIONS_TEXT = (
     "it can produce regions on unedited images and miss real edits; it is a weak indicator only."
 )
 
-def _create_evidence(check_name: str, status: EvidenceStatus, observation: Dict[str, Any], raw_ref: str, parameters: Dict[str, Any] = None) -> EvidenceRecord:
+def _create_evidence(check_name: str, status: EvidenceStatus, observation: Dict[str, Any], raw_ref: str, parameters: Dict[str, Any] = None, location: EvidenceLocation = None) -> EvidenceRecord:
     return EvidenceRecord(
         id=str(uuid.uuid4()),
         type=f"forensic_{check_name}",
         observation=observation,
+        location=location,
         method="rule_based",
         status=status,
         provenance=Provenance(
@@ -200,7 +201,8 @@ def run_ela(file_path: str) -> Tuple[bytes, List[EvidenceRecord]]:
         if emitted == MAX_REGIONS_EMITTED - 1 and len(contours) > MAX_REGIONS_EMITTED:
             obs["note"] = f"MAX_REGIONS_EMITTED cap ({MAX_REGIONS_EMITTED}) reached."
 
-        records.append(_create_evidence("ela_region", EvidenceStatus.OK, obs, raw_ref, parameters=params))
+        loc = EvidenceLocation(page_number=1, x=nx, y=ny, width=nw, height=nh)
+        records.append(_create_evidence("ela_region", EvidenceStatus.OK, obs, raw_ref, parameters=params, location=loc))
         emitted += 1
 
     return raw_map_bytes, records

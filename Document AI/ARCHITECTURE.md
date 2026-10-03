@@ -78,3 +78,6 @@ from forgerylens.contracts.evidence import EvidenceBundle
 def run_pipeline(file_path: str) -> EvidenceBundle:
     pass
 ```
+
+## 9. Evidence Visualization
+The visualization module (`forgerylens.visualization.overlay`) produces human-readable diagnostic images from `EvidenceBundle` objects. It draws bounding boxes over the document image based on the normalized coordinates defined in `EvidenceLocation`. Out-of-bounds, non-analyzable, or non-existent pages are skipped and documented in a JSON manifest. Artifacts are emitted to local storage and referenced via `artifact:sha256/filename` rather than absolute paths, maintaining platform-independence. The overlay is purely presentation and strictly states that it is not a tampering verdict.
